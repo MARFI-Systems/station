@@ -1,6 +1,6 @@
 {
-  "short_name": "Macro",
-  "name": "Macro Document Workspace",
+  "short_name": "Station",
+  "name": "Station by MARFI",
   "icons": [
     {
       "src": "./macro-favicon.svg",
