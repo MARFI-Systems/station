@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Self-hosted MARFI typefaces, shared with marfi.ai. */
+@font-face { font-family: "Manrope"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("/app/fonts/manrope-400-700-latin.woff2") format("woff2"); }
+@font-face { font-family: "Syne"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("/app/fonts/syne-500-700-latin.woff2") format("woff2"); }
+@font-face { font-family: "DM Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("/app/fonts/dm-mono-400-latin.woff2") format("woff2"); }
+
 @source inline("{data-highlighted:}text-{comment,note,canvas,html,folder,email,code,pdf,image,write,chat,video,rss,calendar,contact,default},{tauri-ios:}{hidden}");
 @source inline("z-{popup-viewer,viewer-definition-lookup}");
 @source './lib/core/component/LexicalMarkdown/theme.ts';
@@ -626,14 +631,11 @@ body.tauri-ios {
   --color-email:       var(--color-default);
 
   /* Font families */
-  /* Apple devices get the system font (SF): `-apple-system` and
-     `BlinkMacSystemFont` only resolve on Apple platforms, so everywhere else
-     falls straight through to the bundled Inter. `system-ui` and "Segoe UI"
-     are deliberately absent so Windows never renders text in Segoe; the Segoe
-     entries at the end are emoji/symbol fallbacks only. */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter Variable", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  /* MARFI first; retain platform and Unicode fallbacks. */
+  --font-sans: "Manrope", -apple-system, BlinkMacSystemFont, "Inter Variable", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-display: "Syne", "Manrope", sans-serif;
   --font-serif: "Playfair Display Variable", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-  --font-mono: "Roboto Mono Variable",  monospace;
+  --font-mono: "DM Mono", "Roboto Mono Variable", monospace;
   --text-xxs: 0.625rem;
 
   /* Animations */
