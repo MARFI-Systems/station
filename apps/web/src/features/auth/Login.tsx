@@ -626,12 +626,12 @@ export function Login(props: { signupMode?: boolean }) {
             <div class="flex flex-col gap-8">
               <Show when={!virtualKeyboardVisible()}>
                 <div class="flex flex-col gap-1.5">
-                  <LogoIcon class="mb-2 size-9 text-accent" />
+                  <img src="/app/marfi-logo.webp" alt="MARFI" width="42" height="42" class="mb-2 size-11 rounded-md" />
                   <h1 class="font-semibold tracking-tight text-ink text-2xl">
-                    Welcome to Macro
+                    Welcome to Station
                   </h1>
                   <p class="text-sm text-ink-muted">
-                    The open source workspace
+                    Stay in control.
                   </p>
                 </div>
               </Show>
@@ -659,14 +659,14 @@ export function Login(props: { signupMode?: boolean }) {
               By continuing, you agree to our{' '}
               <a
                 class="text-link hover:text-link-hover visited:text-link-visited underline underline-offset-2 focus-visible:text-link-hover"
-                href="/terms"
+                href="https://marfi.ai/legal/terms/"
               >
                 terms
               </a>{' '}
               and{' '}
               <a
                 class="text-link hover:text-link-hover visited:text-link-visited underline underline-offset-2 focus-visible:text-link-hover"
-                href="/privacy"
+                href="https://marfi.ai/legal/privacy/"
               >
                 privacy policy
               </a>
