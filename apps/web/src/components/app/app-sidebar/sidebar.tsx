@@ -75,7 +75,6 @@ import type { ValidHotkey } from '@core/hotkey/types';
 import { activateClosestDOMScope } from '@core/hotkey/utils';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { getDisplayName, tryMacroId } from '@core/user';
-import LogoIcon from '@icon/macro-logo.svg';
 import { ContextMenu } from '@kobalte/core/context-menu';
 import BellIcon from '@phosphor/bell.svg';
 import CaretRightIcon from '@phosphor/caret-right.svg';
@@ -1521,9 +1520,9 @@ export const AppSidebar = (props: AppSidebarProps) => {
       <div class="shrink-0 flex items-center justify-between w-full relative group/logo-area">
         <div class="text-accent min-w-0 flex flex-1 items-center gap-2 pl-2">
           <div class="size-5 shrink-0 flex items-center justify-center">
-            <LogoIcon class="size-4" />
+            <img src="/app/marfi-logo.webp" alt="MARFI" width="24" height="24" class="size-6 object-contain" />
           </div>
-          <Show when={currentTeamName()}>
+          <Show when={currentTeamName()} fallback={<span class="font-display font-semibold text-ink">Station</span>}>
             {(teamName) => (
               <span class="min-w-0 truncate text-[13px] font-medium text-ink">
                 {teamName()}

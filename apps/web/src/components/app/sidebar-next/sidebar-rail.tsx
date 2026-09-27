@@ -59,6 +59,9 @@ export const SidebarRail = () => {
         (globalSplitManager()?.splits().length ?? 1) <= 1 && 'border-r'
       )}
     >
+      <div class="flex size-10 shrink-0 items-center justify-center mb-2" title="Station by MARFI">
+        <img src="/app/marfi-logo.webp" alt="Station by MARFI" width="32" height="32" class="size-8 object-contain" />
+      </div>
       <SidebarRailCreateButton />
       <SearchRailButton />
 

@@ -1,29 +1,28 @@
 import type { ThemeV3 } from '../types/themeTypes';
 
-/** Near-black neutral gray surfaces with a restrained depth ramp and muted blue accent. */
+/** MARFI ink, warm paper and brand red, aligned with marfi.ai. */
 export const macroDarkTheme = {
+  // Keep the persisted upstream ID so existing theme preferences still resolve.
   id: 'Macro Dark',
-  name: 'Macro Dark',
+  name: 'MARFI Dark',
   version: 3,
   mode: 'dark',
   colorTokens: {
-    'surface-0': 'oklch(0.17 0 0deg)',
-    'surface-1':
-      'color-mix(in oklch, var(--color-surface-0) 97%, var(--color-content-0))',
-    'surface-2':
-      'color-mix(in oklch, var(--color-surface-0) 95%, var(--color-content-0))',
-    'surface-3':
-      'color-mix(in oklch, var(--color-surface-0) 93%, var(--color-content-0))',
-    'surface-4':
-      'color-mix(in oklch, var(--color-surface-0) 91%, var(--color-content-0))',
-    'content-0': 'oklch(1 0 21deg)',
-    'content-1': 'oklch(0.83 0 21deg)',
-    'content-2': 'oklch(0.75 0 21deg)',
-    'content-3': 'oklch(0.63 0 21deg)',
-    'content-4': 'oklch(0.55 0 21deg)',
-    edge: 'var(--color-surface-4)',
-    'edge-muted': 'var(--color-surface-2)',
-    accent: 'oklch(0.7 0.12 250deg)',
+    'surface-0': '#08090D',
+    'surface-1': '#101219',
+    'surface-2': '#191C25',
+    'surface-3': '#222631',
+    'surface-4': '#303541',
+    'content-0': '#F2EEE7',
+    'content-1': '#D8D4CF',
+    'content-2': '#B9B8BD',
+    'content-3': '#999BA5',
+    'content-4': '#858995',
+    edge: '#303541',
+    'edge-muted': '#222631',
+    accent: '#DE3C4B',
+    'accent-contrast': '#08090D',
+    'accent-contrast-muted': 'rgb(8 9 13 / 0.75)',
     red: 'oklch(0.75 0.2 25.331deg)',
     orange: 'oklch(0.75 0.2 47.604deg)',
     amber: 'oklch(0.75 0.2 70.08deg)',
@@ -43,9 +42,9 @@ export const macroDarkTheme = {
     'ink-subtle': 'var(--color-content-2)',
     'ink-disabled': 'var(--color-content-3)',
     'ink-placeholder': 'var(--color-content-4)',
-    link: 'var(--color-accent)',
-    'link-hover': 'var(--color-accent)',
-    'link-visited': 'var(--color-accent)',
+    link: '#FF5362',
+    'link-hover': '#FF7A85',
+    'link-visited': '#FF5362',
     page: 'var(--color-surface-0)',
     panel: 'var(--color-surface-0)',
     dialog: 'var(--color-surface-2)',
@@ -61,7 +60,7 @@ export const macroDarkTheme = {
     success: 'var(--color-green)',
     warning: 'var(--color-amber)',
     failure: 'var(--color-red)',
-    // Keep mobile glass at its original lightness, independent of the page base.
-    chrome: 'oklch(0.2 0 0deg)',
+    // Mobile chrome follows the MARFI surface palette.
+    chrome: '#101219',
   },
 } satisfies ThemeV3;

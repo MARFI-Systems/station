@@ -183,7 +183,7 @@ export const ListNav = (props: ListNavProps) => {
         size="icon-md"
         class={cn(
           'size-10 cursor-default rounded-xl',
-          isActive() && 'bg-hover text-ink'
+          isActive() && 'bg-selected text-link ring-1 ring-accent/30'
         )}
         label={props.item.label}
         aria-description={

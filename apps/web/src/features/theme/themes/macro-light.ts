@@ -1,27 +1,27 @@
 import type { ThemeV3 } from '../types/themeTypes';
 
 export const macroLightTheme = {
+  // Keep the persisted upstream ID so existing theme preferences still resolve.
   id: 'Macro Light',
-  name: 'Macro Light',
+  name: 'MARFI Light',
   version: 3,
   mode: 'light',
   colorTokens: {
-    'surface-0': 'oklch(0.964 0 59deg)',
-    'surface-1':
-      'color-mix(in srgb, var(--color-surface-0) 30%, var(--color-surface-4))',
-    'surface-2':
-      'color-mix(in srgb, var(--color-surface-0) 15%, var(--color-surface-4))',
-    'surface-3':
-      'color-mix(in srgb, var(--color-surface-0) 7%, var(--color-surface-4))',
-    'surface-4': 'oklch(1 0 59deg)',
-    'content-0': 'oklch(0.16 0 59deg)',
-    'content-1': 'oklch(0.4 0 59deg)',
-    'content-2': 'oklch(0.45 0 59deg)',
-    'content-3': 'oklch(0.55 0 59deg)',
-    'content-4': 'oklch(0.7 0 59deg)',
-    edge: 'oklch(0.91 0 59deg)',
-    'edge-muted': 'oklch(0.92 0 59deg)',
-    accent: 'oklch(0.65 0.2 59deg)',
+    'surface-0': '#F2EEE7',
+    'surface-1': '#F7F3ED',
+    'surface-2': '#FBF7F0',
+    'surface-3': '#FFFAF3',
+    'surface-4': '#FFFFFF',
+    'content-0': '#08090D',
+    'content-1': '#343741',
+    'content-2': '#515561',
+    'content-3': '#636774',
+    'content-4': '#747782',
+    edge: '#D3CEC7',
+    'edge-muted': '#E0DBD4',
+    accent: '#DE3C4B',
+    'accent-contrast': '#08090D',
+    'accent-contrast-muted': 'rgb(8 9 13 / 0.75)',
     red: 'oklch(63.7% 0.237 25.331)',
     orange: 'oklch(70.5% 0.213 47.604)',
     amber: 'oklch(76.9% 0.188 70.08)',
@@ -41,9 +41,9 @@ export const macroLightTheme = {
     'ink-subtle': 'var(--color-content-2)',
     'ink-disabled': 'var(--color-content-3)',
     'ink-placeholder': 'var(--color-content-4)',
-    link: 'var(--color-accent)',
-    'link-hover': 'var(--color-accent)',
-    'link-visited': 'var(--color-accent)',
+    link: '#A91F31',
+    'link-hover': '#87192A',
+    'link-visited': '#A91F31',
     page: 'var(--color-surface-0)',
     panel: 'var(--color-surface-4)',
     dialog: 'var(--color-surface-3)',
@@ -59,7 +59,6 @@ export const macroLightTheme = {
     success: 'var(--color-green)',
     warning: 'var(--color-yellow)',
     failure: 'var(--color-red)',
-    chrome:
-      'color-mix(in oklch, var(--color-surface-3) 98%, var(--color-content-0))',
+    chrome: '#F2EEE7',
   },
 } satisfies ThemeV3;

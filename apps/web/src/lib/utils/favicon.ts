@@ -1,25 +1,11 @@
-import FaviconSvg from '@icon/macro-logo.svg?raw';
-import FaviconBadgeSvg from '@icon/macro-logo-badge.svg?raw';
 
 const FAVICON_SIZE = 48;
 
 let currentFaviconLink: HTMLLinkElement | null = null;
 
-/** escapes a color value for use in SVG */
-function escapeColorForSvg(color: string): string {
-  return color.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-/** insert color and url encode SVG */
-function processSvg(svg: string, color: string) {
-  return `data:image/svg+xml,${encodeURIComponent(svg.replace(/currentColor/g, escapeColorForSvg(color)))}`;
-}
-
-/**
- * Return a data url for the macro logo svg filled with the given color.
- */
-export function getFaviconUrl(color: string) {
-  return processSvg(FaviconSvg, color);
+/** The MARFI mark is fixed brand artwork, not recolored by custom themes. */
+export function getFaviconUrl(_color: string) {
+  return "/app/favicon-32x32.png";
 }
 
 /**
@@ -44,7 +30,7 @@ export function updateFavicon(
   canvas.height = FAVICON_SIZE;
 
   const img = new Image();
-  img.src = processSvg(hasBadge ? FaviconBadgeSvg : FaviconSvg, faviconColor);
+  img.src = getFaviconUrl(faviconColor);
 
   img.onload = () => {
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);

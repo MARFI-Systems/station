@@ -31,6 +31,10 @@ jobs:
       - name: Install workspace dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check MARFI theme contrast and compatibility
+        working-directory: apps/web
+        run: bun test src/features/theme/themes/marfi-brand.test.ts
+
       - name: Compile web bundle
         working-directory: apps/web
         env:
