@@ -2,7 +2,7 @@ use std::num::{NonZeroU16, NonZeroUsize};
 use std::time::Duration;
 
 use url::Url;
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{header, headers, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
@@ -260,9 +260,9 @@ async fn paginates_folder_delta_and_preserves_move_delete_tombstones() {
     Mock::given(method("GET"))
         .and(path(delta_path))
         .and(query_param("$select", DELTA_MESSAGE_SELECT))
-        .and(header(
+        .and(headers(
             "prefer",
-            "odata.maxpagesize=2, IdType=\"ImmutableId\"",
+            vec!["odata.maxpagesize=2", "IdType=\"ImmutableId\""],
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "value": [message_json("message-1", "inbox")],
@@ -274,9 +274,9 @@ async fn paginates_folder_delta_and_preserves_move_delete_tombstones() {
     Mock::given(method("GET"))
         .and(path(delta_path))
         .and(query_param("$skiptoken", "next"))
-        .and(header(
+        .and(headers(
             "prefer",
-            "odata.maxpagesize=2, IdType=\"ImmutableId\"",
+            vec!["odata.maxpagesize=2", "IdType=\"ImmutableId\""],
         ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "value": [{"id": "message-moved-or-deleted", "@removed": {"reason": "deleted"}}],
