@@ -287,11 +287,10 @@ fn resolve_microsoft_mailbox_completion_url(
     if !enabled {
         return Ok(None);
     }
-    let raw = nonblank_value(completion_url.value()).context(
-        "MICROSOFT_MAILBOX_COMPLETION_URL is required when mailbox OAuth is enabled",
-    )?;
-    let url = url::Url::parse(raw)
-        .context("MICROSOFT_MAILBOX_COMPLETION_URL must be an absolute URL")?;
+    let raw = nonblank_value(completion_url.value())
+        .context("MICROSOFT_MAILBOX_COMPLETION_URL is required when mailbox OAuth is enabled")?;
+    let url =
+        url::Url::parse(raw).context("MICROSOFT_MAILBOX_COMPLETION_URL must be an absolute URL")?;
     let secure_origin = url.scheme() == "https"
         || (url.scheme() == "http"
             && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1")));

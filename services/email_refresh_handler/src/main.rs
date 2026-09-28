@@ -24,9 +24,9 @@ fn parse_run_mode(args: impl IntoIterator<Item = OsString>) -> anyhow::Result<Ru
     match args.as_slice() {
         [] => Ok(RunMode::Lambda),
         [arg] if arg == "--microsoft-once" => Ok(RunMode::MicrosoftOnce),
-        _ => bail!(
-            "expected no arguments for Lambda mode or exactly --microsoft-once for host mode"
-        ),
+        _ => {
+            bail!("expected no arguments for Lambda mode or exactly --microsoft-once for host mode")
+        }
     }
 }
 
