@@ -42,6 +42,8 @@ maybe_env_vars! {
     pub struct MicrosoftClientSecret;
     pub struct MicrosoftTenantId;
     pub struct MicrosoftTokenKmsKeyId;
+    /// Fixed frontend completion URL; must end exactly at /settings/connections.
+    pub struct MicrosoftMailboxCompletionUrl;
     /// KMS key that encrypts users' Cursor API keys. Deliberately not the
     /// Microsoft one: sharing it would grant whatever decrypts Cursor keys
     /// access to the key protecting everyone's mailbox credentials.
@@ -117,6 +119,8 @@ pub struct Config {
     pub microsoft_tenant_id: MicrosoftTenantId,
     /// KMS key used to encrypt Microsoft refresh-token data keys.
     pub microsoft_token_kms_key_id: MicrosoftTokenKmsKeyId,
+    /// Fixed frontend route used after mailbox consent.
+    pub microsoft_mailbox_completion_url: MicrosoftMailboxCompletionUrl,
     /// KMS key used to encrypt users' Cursor API keys. Required in practice —
     /// read through [`Config::cursor_api_key_kms_key_id`], which refuses an
     /// absent or blank value at startup.
@@ -183,6 +187,9 @@ pub struct Config {
     /// calendar feature isn't using yet.
     #[macro_config_default(false)]
     pub calendar_scope_enabled: bool,
+    /// Enables delegated Microsoft mailbox consent. Defaults off and remains restricted to MICROSOFT_TENANT_ID.
+    #[macro_config_default(false)]
+    pub microsoft_mailbox_oauth_enabled: bool,
 }
 
 /// Complete Microsoft OAuth credentials used to enable Outlook account linking.
@@ -240,6 +247,31 @@ impl Config {
             &self.microsoft_tenant_id,
             &self.microsoft_token_kms_key_id,
         )
+    }
+
+    /// Resolves the fixed mailbox completion URL when the feature is enabled.
+    pub(crate) fn microsoft_mailbox_completion_url(&self) -> anyhow::Result<Option<String>> {
+        if !self.microsoft_mailbox_oauth_enabled {
+            return Ok(None);
+        }
+        let raw = nonblank_value(self.microsoft_mailbox_completion_url.value()).context(
+            "MICROSOFT_MAILBOX_COMPLETION_URL is required when mailbox OAuth is enabled",
+        )?;
+        let url = url::Url::parse(raw)
+            .context("MICROSOFT_MAILBOX_COMPLETION_URL must be an absolute URL")?;
+        let secure_origin = url.scheme() == "https"
+            || (url.scheme() == "http"
+                && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1")));
+        if !secure_origin
+            || url.path() != "/settings/connections"
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            anyhow::bail!(
+                "MICROSOFT_MAILBOX_COMPLETION_URL must be a fixed /settings/connections URL without query or fragment"
+            );
+        }
+        Ok(Some(url.to_string()))
     }
 
     /// Resolves the signup policy for the configured environment.

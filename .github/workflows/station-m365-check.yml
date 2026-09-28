@@ -55,8 +55,10 @@ jobs:
           cargo metadata --format-version 1 > "$RUNNER_TEMP/station-m365-metadata.json"
           git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
 
-      - name: Check Rust formatting
-        run: cargo fmt --all --check
+      - name: Format Rust and collect source patch
+        run: |
+          cargo fmt --all
+          git diff --binary -- . ":!Cargo.lock" > "$RUNNER_TEMP/station-m365-format.diff"
 
       - name: Create disposable runner-only test databases
         run: |
@@ -71,6 +73,14 @@ jobs:
           set -euo pipefail
           unset SQLX_OFFLINE RUSTC_WRAPPER
           cargo test --locked -p email_api_client --features outbound-gmail,outbound-microsoft-graph
+
+      - name: Test Microsoft identity and grant ownership boundaries
+        run: |
+          set -euo pipefail
+          unset SQLX_OFFLINE RUSTC_WRAPPER
+          cargo test --locked -p fusionauth microsoft
+          cargo test --locked -p microsoft_oauth_grant_db_utils
+          cargo test --locked -p authentication_service microsoft
 
       - name: Type-check native mailbox services against disposable schema
         run: |
@@ -87,6 +97,7 @@ jobs:
             Cargo.lock
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
+            ${{ runner.temp }}/station-m365-format.diff
           if-no-files-found: warn
           retention-days: 7
 

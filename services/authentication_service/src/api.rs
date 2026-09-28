@@ -22,6 +22,7 @@ mod email;
 mod link;
 #[allow(unused_imports)]
 mod merge;
+mod microsoft_mailbox;
 mod mobile_welcome_email;
 
 mod github_pull_requests;
@@ -117,6 +118,7 @@ fn api_router(state: ApiContext) -> Router<ApiContext> {
         .nest("/logout", logout::router())
         .nest("/oauth", oauth::router(state.clone()))
         .nest("/oauth2", oauth2::router())
+        .nest("/microsoft-mailbox", microsoft_mailbox::router())
         .nest("/user", user::router())
         .nest("/link", link::router())
         .nest("/cursor-api-key", cursor_api_key::router())

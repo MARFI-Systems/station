@@ -115,6 +115,10 @@ async fn main() -> anyhow::Result<()> {
     let microsoft_credentials = config
         .microsoft_credentials()
         .context("invalid Microsoft OAuth configuration")?;
+    let microsoft_mailbox_completion_url = config.microsoft_mailbox_completion_url()?;
+    if config.microsoft_mailbox_oauth_enabled && microsoft_credentials.is_none() {
+        anyhow::bail!("Microsoft mailbox OAuth requires complete Microsoft credentials");
+    }
     let microsoft_token_cipher = microsoft_credentials.as_ref().map(|credentials| {
         Arc::new(EnvelopeMicrosoftTokenCipher::new(KmsDataKeyProvider::new(
             aws_sdk_kms::Client::new(&aws_config),
@@ -536,6 +540,8 @@ async fn main() -> anyhow::Result<()> {
             github_link_service: Arc::new(github_link_service_impl),
             auth_client: Arc::new(auth_client),
             microsoft_token_cipher,
+            microsoft_mailbox_oauth_enabled: config.microsoft_mailbox_oauth_enabled,
+            microsoft_mailbox_completion_url,
             cursor_api_key_cipher,
             codex_connection,
             macro_cache_client: Arc::new(macro_cache_client),

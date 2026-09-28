@@ -417,7 +417,7 @@ async fn link_user<D: MicrosoftCallbackDependencies + ?Sized>(
         .mailbox_owner(&identity.email, &pending_link_owner)
         .await?;
 
-    let link_change = dependencies
+    dependencies
         .link_identity(
             &identity_provider_id,
             &link_owner_id,
@@ -426,44 +426,8 @@ async fn link_user<D: MicrosoftCallbackDependencies + ?Sized>(
         )
         .await?;
 
-    let encrypted_token = match dependencies
-        .encrypt_grant(
-            &link_owner_id,
-            &identity.email,
-            MicrosoftRefreshToken::new(token_response.refresh_token),
-        )
-        .await
-    {
-        Ok(encrypted_token) => encrypted_token,
-        Err(_) => {
-            dependencies
-                .compensate_link(
-                    &identity_provider_id,
-                    &link_owner_id,
-                    &identity,
-                    link_change,
-                )
-                .await;
-            return Err(grant_storage_error());
-        }
-    };
-
-    if dependencies
-        .persist_grant(&link_owner_id, &identity.email, &encrypted_token)
-        .await
-        .is_err()
-    {
-        dependencies
-            .compensate_link(
-                &identity_provider_id,
-                &link_owner_id,
-                &identity,
-                link_change,
-            )
-            .await;
-        return Err(grant_storage_error());
-    }
-
+    // Identity linking remains identity-only. Delegated mailbox grants are created solely by
+    // /microsoft-mailbox/connect and never written as a side effect of Station login linking.
     dependencies
         .mark_link_consumable(link_id, &identity.email)
         .await

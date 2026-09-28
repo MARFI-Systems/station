@@ -19,7 +19,7 @@ const AES_GCM_TAG_LENGTH: usize = 16;
 const ENCRYPTION_PURPOSE: &str = "microsoft-refresh-token";
 
 /// An encrypted Microsoft refresh-token envelope suitable for persistence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(crate) struct EncryptedMicrosoftToken {
     pub(crate) refresh_token_ciphertext: Vec<u8>,
     pub(crate) encrypted_data_key: Vec<u8>,
@@ -57,6 +57,34 @@ pub(crate) trait MicrosoftTokenCipher: Send + Sync {
         email_address: &str,
         envelope: &EncryptedMicrosoftToken,
     ) -> Result<MicrosoftRefreshToken, MicrosoftTokenCipherError>;
+
+    async fn encrypt_oauth_state(
+        &self,
+        fusionauth_user_id: &str,
+        flow_id: &uuid::Uuid,
+        verifier: MicrosoftRefreshToken,
+    ) -> Result<EncryptedMicrosoftToken, MicrosoftTokenCipherError> {
+        self.encrypt(
+            fusionauth_user_id,
+            &format!("{flow_id}@oauth-state.invalid"),
+            verifier,
+        )
+        .await
+    }
+
+    async fn decrypt_oauth_state(
+        &self,
+        fusionauth_user_id: &str,
+        flow_id: &uuid::Uuid,
+        envelope: &EncryptedMicrosoftToken,
+    ) -> Result<MicrosoftRefreshToken, MicrosoftTokenCipherError> {
+        self.decrypt(
+            fusionauth_user_id,
+            &format!("{flow_id}@oauth-state.invalid"),
+            envelope,
+        )
+        .await
+    }
 }
 
 /// AES-256-GCM envelope cipher backed by an external data-key provider.

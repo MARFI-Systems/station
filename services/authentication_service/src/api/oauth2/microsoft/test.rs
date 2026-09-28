@@ -28,6 +28,8 @@ fn state(identity_provider_id: &str, link_id: Option<Uuid>) -> OAuthState {
 fn extracts_subject_and_normalizes_email() {
     let identity = extract_identity(MicrosoftUserInfo {
         sub: "microsoft-user-id".into(),
+        tenant_id: "microsoft-tenant-id".into(),
+        object_id: "microsoft-object-id".into(),
         email: "Linked.User+Macro@Example.COM".into(),
     })
     .unwrap();
@@ -41,10 +43,14 @@ fn rejects_identity_without_subject_or_usable_email() {
     for user_info in [
         MicrosoftUserInfo {
             sub: "".into(),
+            tenant_id: "microsoft-tenant-id".into(),
+            object_id: "microsoft-object-id".into(),
             email: "linked@example.com".into(),
         },
         MicrosoftUserInfo {
             sub: "microsoft-user-id".into(),
+            tenant_id: "microsoft-tenant-id".into(),
+            object_id: "microsoft-object-id".into(),
             email: "not-an-email".into(),
         },
     ] {
@@ -76,7 +82,7 @@ fn microsoft_callback_accepts_resolved_identity_provider() {
 }
 
 #[tokio::test]
-async fn first_link_persists_encrypted_grant_before_making_link_consumable() {
+async fn identity_link_never_persists_a_mailbox_grant() {
     let dependencies = FakeDependencies::new(
         [REFRESH_TOKEN],
         [LinkScenario::Fresh],
@@ -94,21 +100,16 @@ async fn first_link_persists_encrypted_grant_before_making_link_consumable() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let recorded = dependencies.recorded();
-    assert_eq!(recorded.events, ["link", "encrypt", "persist", "mark"]);
-    assert_eq!(
-        recorded.grants.keys().collect::<Vec<_>>(),
-        [&(
-            PENDING_OWNER.to_owned(),
-            "linked.user@example.com".to_owned()
-        )]
-    );
+    assert_eq!(recorded.events, ["link", "mark"]);
+    assert!(recorded.grants.is_empty());
+    assert!(recorded.encryption_identities.is_empty());
     assert_eq!(recorded.fusion_token_lengths, [REFRESH_TOKEN.len()]);
     assert!(recorded.compensations.is_empty());
     assert!(recorded.cleaned_links.is_empty());
 }
 
 #[tokio::test]
-async fn reconnect_replaces_the_encrypted_grant() {
+async fn reconnect_updates_identity_link_without_touching_mailbox_grants() {
     let dependencies = FakeDependencies::new(
         ["first-refresh-token", "replacement-refresh-token"],
         [
@@ -129,23 +130,12 @@ async fn reconnect_replaces_the_encrypted_grant() {
     }
 
     let recorded = dependencies.recorded();
-    assert_eq!(recorded.grants.len(), 1);
-    assert_eq!(
-        recorded
-            .grants
-            .get(&(PENDING_OWNER.to_owned(), "linked@example.com".to_owned())),
-        Some(&vec![2])
-    );
-    assert_eq!(
-        recorded.events,
-        [
-            "link", "encrypt", "persist", "mark", "link", "encrypt", "persist", "mark"
-        ]
-    );
+    assert!(recorded.grants.is_empty());
+    assert_eq!(recorded.events, ["link", "mark", "link", "mark"]);
 }
 
 #[tokio::test]
-async fn grant_is_keyed_by_resolved_owner_and_normalized_mailbox() {
+async fn identity_link_resolves_owner_but_does_not_create_mailbox_grant() {
     let dependencies = FakeDependencies::new(
         [REFRESH_TOKEN],
         [LinkScenario::Fresh],
@@ -162,65 +152,8 @@ async fn grant_is_keyed_by_resolved_owner_and_normalized_mailbox() {
     .unwrap();
 
     let recorded = dependencies.recorded();
-    assert_eq!(
-        recorded.encryption_identities,
-        [("mailbox-owner".into(), "linked.user@example.com".into())]
-    );
-    assert!(
-        recorded
-            .grants
-            .contains_key(&("mailbox-owner".into(), "linked.user@example.com".into()))
-    );
-}
-
-#[tokio::test]
-async fn encryption_failure_compensates_fresh_link_and_cleans_pending_link() {
-    let dependencies =
-        FakeDependencies::new([REFRESH_TOKEN], [LinkScenario::Fresh], "linked@example.com")
-            .with_failure(Failure::Encryption);
-    let link_id = Uuid::now_v7();
-
-    let response = callback_error(
-        handler_with_dependencies(
-            &dependencies,
-            "authorization-code",
-            &state(IDENTITY_PROVIDER_ID, Some(link_id)),
-        )
-        .await,
-    );
-
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let recorded = dependencies.recorded();
-    assert_eq!(recorded.compensations, [Compensation::Fresh]);
-    assert_eq!(recorded.cleaned_links, [link_id]);
+    assert!(recorded.encryption_identities.is_empty());
     assert!(recorded.grants.is_empty());
-    assert!(recorded.marked_emails.is_empty());
-}
-
-#[tokio::test]
-async fn database_failure_restores_replaced_link_and_cleans_pending_link() {
-    let dependencies = FakeDependencies::new(
-        [REFRESH_TOKEN],
-        [LinkScenario::Reconnect("stale-refresh-token".into())],
-        "linked@example.com",
-    )
-    .with_failure(Failure::Persistence);
-    let link_id = Uuid::now_v7();
-
-    let response = callback_error(
-        handler_with_dependencies(
-            &dependencies,
-            "authorization-code",
-            &state(IDENTITY_PROVIDER_ID, Some(link_id)),
-        )
-        .await,
-    );
-
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let recorded = dependencies.recorded();
-    assert_eq!(recorded.compensations, [Compensation::Replaced]);
-    assert_eq!(recorded.cleaned_links, [link_id]);
-    assert!(recorded.marked_emails.is_empty());
 }
 
 #[tokio::test]
@@ -240,29 +173,6 @@ async fn callback_failure_before_linking_still_cleans_pending_link() {
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(dependencies.recorded().cleaned_links, [link_id]);
-}
-
-#[tokio::test]
-async fn grant_failure_error_and_response_never_contain_refresh_token() {
-    let dependencies =
-        FakeDependencies::new([REFRESH_TOKEN], [LinkScenario::Fresh], "linked@example.com")
-            .with_failure(Failure::Persistence);
-
-    let result = link_user(
-        &dependencies,
-        "authorization-code",
-        &state(IDENTITY_PROVIDER_ID, Some(Uuid::now_v7())),
-        &Uuid::now_v7(),
-    )
-    .await;
-    let error = result.unwrap_err();
-    assert!(!error.1.contains(REFRESH_TOKEN));
-
-    let response = callback_error_response(error);
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    let body = String::from_utf8(body.to_vec()).unwrap();
-    assert!(!body.contains(REFRESH_TOKEN));
-    assert!(body.contains(GRANT_STORAGE_ERROR));
 }
 
 fn callback_error(result: Result<Response, Response>) -> Response {
@@ -400,6 +310,8 @@ impl MicrosoftCallbackDependencies for FakeDependencies {
     async fn parse_identity(&self, _id_token: &str) -> MicrosoftCallbackResult<MicrosoftUserInfo> {
         Ok(MicrosoftUserInfo {
             sub: "microsoft-user-id".into(),
+            tenant_id: "microsoft-tenant-id".into(),
+            object_id: "microsoft-object-id".into(),
             email: self.user_email.clone(),
         })
     }

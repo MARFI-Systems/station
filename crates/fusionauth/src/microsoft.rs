@@ -64,6 +64,66 @@ impl FusionAuthClient {
         .map_err(FusionAuthClientError::from)
     }
 
+    /// Constructs a delegated, read-only mailbox authorization URL with PKCE.
+    pub fn construct_microsoft_mailbox_authorize_url<T>(
+        &self,
+        redirect_uri: &str,
+        state: &T,
+        code_challenge: &str,
+    ) -> Result<String>
+    where
+        T: serde::Serialize + ?Sized,
+    {
+        let credentials = self.microsoft_credentials()?;
+        oauth::construct_mailbox_authorize_url(
+            &credentials.client_id,
+            &credentials.tenant_id,
+            redirect_uri,
+            state,
+            code_challenge,
+        )
+        .map_err(FusionAuthClientError::from)
+    }
+
+    /// Exchanges a PKCE-bound mailbox authorization code.
+    pub async fn exchange_microsoft_mailbox_code_for_tokens(
+        &self,
+        redirect_uri: &str,
+        code: &str,
+        code_verifier: &str,
+    ) -> Result<(
+        oauth::MicrosoftExchangeTokenResponse,
+        oauth::MicrosoftMailboxAccessTokenResponse,
+    )> {
+        let credentials = self.microsoft_credentials()?;
+        oauth::exchange_mailbox_code_for_tokens(
+            &self.unauth_client,
+            &credentials.client_id,
+            &credentials.client_secret,
+            &credentials.tenant_id,
+            redirect_uri,
+            code,
+            code_verifier,
+        )
+        .await
+    }
+
+    /// Refreshes a delegated, read-only Microsoft mailbox token.
+    pub async fn refresh_microsoft_mailbox_access_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<oauth::MicrosoftMailboxAccessTokenResponse> {
+        let credentials = self.microsoft_credentials()?;
+        oauth::refresh_mailbox_access_token(
+            &self.unauth_client,
+            &credentials.client_id,
+            &credentials.client_secret,
+            &credentials.tenant_id,
+            refresh_token,
+        )
+        .await
+    }
+
     /// Exchanges a Microsoft authorization code for a refresh token and ID token.
     #[tracing::instrument(skip(self, code, redirect_uri), err)]
     pub async fn exchange_microsoft_code_for_tokens(

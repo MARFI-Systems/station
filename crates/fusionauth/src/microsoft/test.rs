@@ -115,6 +115,7 @@ fn valid_claims() -> serde_json::Value {
         "aud": "microsoft-client-id",
         "tid": "microsoft-tenant-id",
         "sub": "microsoft-user-id",
+        "oid": "microsoft-object-id",
         "email": "email@example.com",
         "exp": now() + 3600,
         "nbf": now() - 300,
@@ -164,7 +165,7 @@ fn authorize_url_uses_configured_tenant_and_secondary_account_parameters() {
     assert_eq!(query.get("response_type").unwrap(), "code");
     assert_eq!(
         query.get("scope").unwrap(),
-        "openid email offline_access profile Mail.ReadWrite Mail.Send"
+        "openid email offline_access profile"
     );
     assert_eq!(query.get("prompt").unwrap(), "select_account");
 }
@@ -232,6 +233,8 @@ fn id_token_claims_are_validated_and_email_is_preferred() {
     let user = decode_id_token(&token).unwrap();
 
     assert_eq!(user.sub, "microsoft-user-id");
+    assert_eq!(user.tenant_id, "microsoft-tenant-id");
+    assert_eq!(user.object_id, "microsoft-object-id");
     assert_eq!(user.email, "email@example.com");
 }
 
@@ -254,6 +257,7 @@ fn id_token_rejects_invalid_claims() {
         ("aud", serde_json::json!("another-client")),
         ("tid", serde_json::json!("another-tenant")),
         ("sub", serde_json::json!("")),
+        ("oid", serde_json::json!("")),
         ("email", serde_json::Value::Null),
         ("exp", serde_json::json!(now() - 3600)),
         ("exp", serde_json::Value::Null),
@@ -385,4 +389,40 @@ async fn signing_key_fetch_rejects_an_empty_key_set() {
             .to_string()
             .contains("did not contain any signing keys")
     );
+}
+
+#[test]
+fn mailbox_authorize_url_uses_only_read_scope_and_pkce() {
+    let url = microsoft_client()
+        .construct_microsoft_mailbox_authorize_url(
+            "https://auth.example.com/microsoft-mailbox/callback",
+            &"opaque-state",
+            "pkce-challenge",
+        )
+        .unwrap();
+    let url = reqwest::Url::parse(&url).unwrap();
+    let query: HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(
+        query.get("scope").unwrap(),
+        "openid email offline_access profile Mail.Read"
+    );
+    assert_eq!(query.get("code_challenge").unwrap(), "pkce-challenge");
+    assert_eq!(query.get("code_challenge_method").unwrap(), "S256");
+    assert!(!url.as_str().contains("Mail.ReadWrite"));
+    assert!(!url.as_str().contains("Mail.Send"));
+}
+
+#[test]
+fn mailbox_scope_validator_rejects_write_send_and_missing_read() {
+    assert!(
+        oauth::validate_mailbox_scopes("openid email offline_access profile Mail.Read").is_ok()
+    );
+    for scopes in [
+        "openid email offline_access profile",
+        "openid email offline_access profile Mail.Read Mail.ReadWrite",
+        "openid email offline_access profile Mail.Read Mail.Send",
+        "openid email offline_access profile Mail.Read User.Read.All",
+    ] {
+        assert!(oauth::validate_mailbox_scopes(scopes).is_err(), "{scopes}");
+    }
 }

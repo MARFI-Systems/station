@@ -8,8 +8,10 @@ version = "0.1.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
+uuid = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 macro_db_migrator = { path = "../macro_db_migrator" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

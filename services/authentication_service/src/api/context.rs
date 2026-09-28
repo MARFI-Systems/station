@@ -134,6 +134,10 @@ pub(crate) struct ApiContext {
     pub github_link_service: Arc<GithubLinkServiceType>,
     pub auth_client: Arc<fusionauth::FusionAuthClient>,
     pub microsoft_token_cipher: Option<Arc<dyn MicrosoftTokenCipher>>,
+    /// Explicit deployment gate for delegated Microsoft mailbox consent.
+    pub microsoft_mailbox_oauth_enabled: bool,
+    /// Fixed frontend completion route for mailbox OAuth.
+    pub microsoft_mailbox_completion_url: Option<String>,
     /// Encrypts users' Cursor API keys.
     pub cursor_api_key_cipher: Arc<dyn CursorApiKeyCipher>,
     /// Owner-bound Codex OAuth lifecycle and cloud target settings.
