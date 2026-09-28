@@ -19,6 +19,9 @@ pub enum SeenThreadError {
     #[error("Thread not found")]
     ThreadNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Database query error")]
     QueryError(#[from] anyhow::Error),
 
@@ -30,6 +33,7 @@ impl IntoResponse for SeenThreadError {
     fn into_response(self) -> Response {
         let status_code = match &self {
             SeenThreadError::ThreadNotFound => StatusCode::NOT_FOUND,
+            SeenThreadError::ReadOnly => StatusCode::BAD_REQUEST,
             SeenThreadError::QueryError(_) | SeenThreadError::TransactionError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -84,6 +88,8 @@ pub async fn seen_handler(
     .await
     .context("Failed to resolve inbox for thread")?
     .ok_or(SeenThreadError::ThreadNotFound)?;
+
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| SeenThreadError::ReadOnly)?;
 
     // update viewed_at value in user_history table for thread
     email_db_client::user_history::upsert_user_history(&ctx.db, link.id, thread_id)

@@ -10,7 +10,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use frecency::domain::ports::FrecencyQueryService;
 use uuid::Uuid;
 
-use super::EmailServiceImpl;
+use super::{EmailServiceImpl, ensure_provider_writable};
 
 #[cfg(test)]
 mod test;
@@ -30,6 +30,7 @@ where
         accessible_inboxes: &[Link],
         mut input: CreateDraftInput,
     ) -> Result<CreatedDraft, EmailErr> {
+        ensure_provider_writable(link)?;
         // Ordinary draft persistence never grants delivery authority. Keep the
         // legacy field wire-compatible, but only explicit delivery can use it.
         input.send_time = None;
@@ -50,6 +51,7 @@ where
             .await
             .map_err(anyhow::Error::from)?;
         let link = resolve_target_link(&accessible_inboxes, link_id, &macro_id)?.clone();
+        ensure_provider_writable(&link)?;
         let accessible_link_ids: Vec<Uuid> = accessible_inboxes.iter().map(|l| l.id).collect();
         self.resolve_client_handles(&mut input, &accessible_link_ids)
             .await?;
@@ -174,14 +176,13 @@ where
         macro_id: macro_user_id::user_id::MacroUserIdStr<'_>,
         draft_id: Uuid,
     ) -> Result<DeletedUserDraft, EmailErr> {
-        let accessible_link_ids: Vec<Uuid> = self
+        let accessible_inboxes = self
             .email_repo
             .inboxes_for_macro_id(macro_id)
             .await
-            .map_err(anyhow::Error::from)?
-            .iter()
-            .map(|link| link.id)
-            .collect();
+            .map_err(anyhow::Error::from)?;
+        let accessible_link_ids: Vec<Uuid> =
+            accessible_inboxes.iter().map(|link| link.id).collect();
 
         // The handle resolves like a save's: through the caller-scoped
         // mapping first, else as a server ID from a fetched draft.
@@ -224,6 +225,12 @@ where
         if msg.is_sent || !msg.is_draft {
             return Err(EmailErr::MessageAlreadySent(draft_id));
         }
+
+        let link = accessible_inboxes
+            .iter()
+            .find(|link| link.id == msg.link_id)
+            .ok_or(EmailErr::InboxNotFound)?;
+        ensure_provider_writable(link)?;
 
         let deletion = self
             .email_repo

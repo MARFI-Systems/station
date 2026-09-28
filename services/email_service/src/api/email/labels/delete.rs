@@ -32,6 +32,9 @@ pub async fn handler(
     link: Extension<Link>,
     Path(label_id): Path<Uuid>,
 ) -> Result<Response, Response> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|error| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { message: error.to_string().into() })).into_response()
+    })?;
     let label = email_db_client::labels::get::fetch_label_by_id(&ctx.db, label_id, link.id)
         .await
         .map_err(|e| {

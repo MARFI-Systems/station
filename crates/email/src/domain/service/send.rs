@@ -8,7 +8,7 @@ use crate::domain::{
 use frecency::domain::ports::FrecencyQueryService;
 use macro_event_broker::MacroEventBroker;
 
-use super::EmailServiceImpl;
+use super::{EmailServiceImpl, ensure_provider_writable};
 
 impl<T, U, E, CS, Eam, B> EmailServiceImpl<T, U, E, CS, Eam, B>
 where
@@ -27,6 +27,7 @@ where
         accessible_inboxes: &[Link],
         mut input: CreateDraftInput,
     ) -> Result<CreatedDraft, EmailErr> {
+        ensure_provider_writable(link)?;
         let delay_secs = self.sent_undo_delay_secs;
         let send_time = chrono::Utc::now() + Duration::seconds(delay_secs as i64);
         input.send_time = Some(send_time);

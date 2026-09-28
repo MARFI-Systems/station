@@ -3,6 +3,7 @@ pub(crate) mod calendar;
 pub(crate) mod delete;
 pub(crate) mod health_check;
 pub(crate) mod list;
+pub(crate) mod microsoft;
 pub(crate) mod resync;
 
 use crate::api::ApiContext;
@@ -13,6 +14,7 @@ pub fn router() -> Router<ApiContext> {
     Router::new()
         .route("/", get(list::list_links_handler))
         .route("/health-check", post(health_check::health_check_handler))
+        .route("/microsoft/init", post(microsoft::init_handler))
         .route("/{link_id}", delete(delete::delete_link_handler))
         .route(
             "/{link_id}/calendar",

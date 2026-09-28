@@ -11,6 +11,9 @@ pub enum EmailErr {
     /// An external provider API error (e.g. Gmail API).
     #[error("Provider error: {0}")]
     ProviderErr(anyhow::Error),
+    /// The selected provider exposes mail as read-only.
+    #[error("Microsoft mailboxes are read-only")]
+    ProviderReadOnly,
     /// A frecency query error.
     #[error(transparent)]
     Frecency(#[from] FrecencyQueryErr),

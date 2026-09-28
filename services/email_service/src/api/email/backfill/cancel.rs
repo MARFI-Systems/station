@@ -38,6 +38,10 @@ pub async fn handler(
     link: Extension<Link>,
     Json(req_body): Json<CancelBackfillParams>,
 ) -> Result<Response, Response> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|error| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { message: error.to_string().into() })).into_response()
+    })?;
+
     let job = email_db_client::backfill::job::get::get_backfill_job_with_link_id(
         &ctx.db,
         req_body.job_id,

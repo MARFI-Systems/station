@@ -8,6 +8,7 @@ pub mod crm_cleanup;
 pub mod label;
 pub mod link;
 pub mod message;
+pub mod microsoft;
 pub mod pubsub;
 pub mod settings;
 pub mod sync_token;

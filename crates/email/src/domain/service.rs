@@ -53,6 +53,17 @@ fn changed_project_ids<'a>(
         .collect()
 }
 
+pub(crate) fn ensure_provider_writable(
+    link: &crate::domain::models::Link,
+) -> Result<(), crate::domain::models::EmailErr> {
+    match link.provider {
+        crate::domain::models::UserProvider::Gmail => Ok(()),
+        crate::domain::models::UserProvider::Microsoft => {
+            Err(crate::domain::models::EmailErr::ProviderReadOnly)
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct EmailServiceImpl<T, U, E, CS, Eam, B = NoopMacroEventBroker> {
     pub(crate) email_repo: T,

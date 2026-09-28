@@ -46,3 +46,15 @@ fn healthy_link_derives_from_backfill_state() {
         SyncStatus::Error
     );
 }
+
+#[test]
+fn providers_keep_gmail_wire_value_and_add_microsoft() {
+    assert_eq!(
+        serde_json::to_string(&UserProvider::Gmail).unwrap(),
+        "\"GMAIL\""
+    );
+    assert_eq!(
+        serde_json::to_string(&UserProvider::Microsoft).unwrap(),
+        "\"MICROSOFT\""
+    );
+}

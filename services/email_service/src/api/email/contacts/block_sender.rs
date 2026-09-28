@@ -17,6 +17,9 @@ pub enum BlockSenderError {
     #[error("Failed to enqueue block sender operation")]
     EnqueueFailed,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Internal error")]
     InternalError(#[from] anyhow::Error),
 }
@@ -24,7 +27,7 @@ pub enum BlockSenderError {
 impl IntoResponse for BlockSenderError {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            BlockSenderError::Validation(_) => StatusCode::BAD_REQUEST,
+            BlockSenderError::Validation(_) | BlockSenderError::ReadOnly => StatusCode::BAD_REQUEST,
             BlockSenderError::EnqueueFailed | BlockSenderError::InternalError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -68,6 +71,7 @@ pub async fn handler(
     link: Extension<Link>,
     Json(req): Json<BlockSenderRequest>,
 ) -> Result<StatusCode, BlockSenderError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| BlockSenderError::ReadOnly)?;
     validate_email(&req.email_address)?;
 
     ctx.sqs_client

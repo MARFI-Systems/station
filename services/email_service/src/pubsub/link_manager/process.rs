@@ -60,28 +60,47 @@ pub async fn process_message(
             let link = get_link_or_skip(&ctx, message, link_id).await?;
             let Some(link) = link else { return Ok(()) };
 
-            let result = ctx
-                .email_api
-                .get_access_token(link.id, TokenFreshness::Cached)
-                .await;
+            if link.provider == UserProvider::Gmail {
+                let result = ctx
+                    .email_api
+                    .get_access_token(link.id, TokenFreshness::Cached)
+                    .await;
 
-            if settle_reauth_fetch(&ctx, &link, result).await?.is_some() {
-                handle_refresh(&ctx, &link).await?;
+                if settle_reauth_fetch(&ctx, &link, result).await?.is_some() {
+                    handle_refresh(&ctx, &link).await?;
+                }
+            } else {
+                tracing::warn!(link_id=%link.id, "Microsoft refresh was routed to the Gmail link manager; skipping");
             }
         }
         LinkManagerMessage::HealthCheck { link_id } => {
             let link = get_link_or_skip(&ctx, message, link_id).await?;
             let Some(link) = link else { return Ok(()) };
 
-            // Probe-only: the health side effects happen inside the fetch; a live token
-            // needs no follow-up work here. No-cache so a just-revoked grant is observed
-            // now rather than masked by a still-valid cached access token.
-            let result = ctx
-                .email_api
-                .get_access_token(link.id, TokenFreshness::Fresh)
-                .await;
+            if link.provider == UserProvider::Gmail {
+                // Probe-only: the health side effects happen inside the fetch; a live token
+                // needs no follow-up work here. No-cache so a just-revoked grant is observed
+                // now rather than masked by a still-valid cached access token.
+                let result = ctx
+                    .email_api
+                    .get_access_token(link.id, TokenFreshness::Fresh)
+                    .await;
 
-            settle_reauth_fetch(&ctx, &link, result).await?;
+                settle_reauth_fetch(&ctx, &link, result).await?;
+            } else {
+                tracing::warn!(link_id=%link.id, "Microsoft health check was routed to the Gmail link manager; skipping");
+            }
+        }
+        LinkManagerMessage::MicrosoftSync { link_id, sync_operation } => {
+            let link = get_link_or_skip(&ctx, message, link_id).await?;
+            let Some(link) = link else { return Ok(()) };
+            #[cfg(feature = "microsoft_graph_readonly")]
+            crate::pubsub::link_manager::microsoft_sync::process(&ctx, &link, sync_operation).await?;
+            #[cfg(not(feature = "microsoft_graph_readonly"))]
+            {
+                let _ = sync_operation;
+                tracing::info!(link_id=%link.id, "Microsoft mailbox sync feature is disabled");
+            }
         }
         LinkManagerMessage::NotifyReauthRequired { link_id } => {
             let link = get_link_or_skip(&ctx, message, link_id).await?;
@@ -296,45 +315,56 @@ async fn handle_delete(
         })
         .ok();
 
-    // Best effort: revoked grants and provider failures must not block local teardown.
-    // Stop before evicting the token so a valid cached grant remains available for the call.
-    // The health-neutral path never marks the link as needing reauth or notifies the
-    // user about an inbox that is being intentionally removed.
-    retry_teardown(|| ctx.email_api.stop_subscription_for_link(link))
-        .await
-        .inspect_err(|error| {
-            tracing::warn!(error=?error, "Gmail call to stop watch failed");
-        })
-        .ok();
+    match link.provider {
+        UserProvider::Gmail => {
+            // Best effort: revoked grants and provider failures must not block local teardown.
+            // Stop before evicting the token so a valid cached grant remains available.
+            retry_teardown(|| ctx.email_api.stop_subscription_for_link(link))
+                .await
+                .inspect_err(|error| {
+                    tracing::warn!(error=?error, "Gmail call to stop watch failed");
+                })
+                .ok();
 
-    // delete cached access token, in case user re-enables within cache window
-    ctx.redis_client
-        .delete_gmail_access_token(&TokenCacheKey::new(
-            link.fusionauth_user_id.clone(),
-            link.email_address.0.as_ref(),
-            UserProvider::Gmail.as_str(),
-        ))
-        .await
-        .inspect_err(|e| {
-            tracing::warn!(error=?e, "Failed to delete Gmail access token");
-        })
-        .ok();
+            ctx.redis_client
+                .delete_gmail_access_token(&TokenCacheKey::new(
+                    link.fusionauth_user_id.clone(),
+                    link.email_address.0.as_ref(),
+                    UserProvider::Gmail.as_str(),
+                ))
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!(error=?e, "Failed to delete Gmail access token");
+                })
+                .ok();
 
-    // remove google fusionauth link with gmail inbox permissions. best-effort: the FA user may
-    // already be gone (e.g. account deleted before we delete their email), so we warn and keep
-    // going rather than failing the message and retrying.
-    ctx.auth_service_client
-        .remove_link(
-            &link.fusionauth_user_id,
-            link.email_address.0.as_ref(),
-            "google_gmail",
-        )
-        .await
-        .inspect_err(|e| {
-            tracing::warn!(error=?e, "Failed to remove FusionAuth IdP link");
-        })
-        .ok();
-
+            ctx.auth_service_client
+                .remove_link(
+                    &link.fusionauth_user_id,
+                    link.email_address.0.as_ref(),
+                    "google_gmail",
+                )
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!(error=?e, "Failed to remove FusionAuth IdP link");
+                })
+                .ok();
+        }
+        UserProvider::Microsoft => {
+            // Authentication service owns the grant. Remove it before deleting the local link;
+            // this is a local revoke only and performs no remote Graph write.
+            match ctx.auth_service_client.disconnect_microsoft_mailbox(&link.fusionauth_user_id).await {
+                Ok(()) | Err(authentication_service_client::error::AuthServiceClientError::NotFound) => {}
+                Err(error) => return Err(anyhow::Error::new(error).context("Failed to revoke Microsoft mailbox grant")),
+            }
+            let disconnected = email_db_client::microsoft_mailbox::disconnect_microsoft_mailbox_for_owner(
+                &ctx.db, &link.fusionauth_user_id, link.id,
+            ).await.context("Failed to disconnect Microsoft mailbox locally")?;
+            if !disconnected {
+                anyhow::bail!("Microsoft mailbox ownership changed during disconnect");
+            }
+        }
+    }
     // Tear down CRM rows this link contributed to the user's team before
     // the big cascading link delete fires. Best-effort: a failure here
     // would only leave orphan `crm_contacts`/`crm_companies` rows behind

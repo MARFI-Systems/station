@@ -68,6 +68,7 @@ impl From<EmailErr> for CreateDraftError {
                 CreateDraftError::NotFound(err.to_string())
             }
             EmailErr::MessageAlreadySent(_)
+            | EmailErr::ProviderReadOnly
             | EmailErr::MessageDeliveryConflict(_)
             | EmailErr::CannotReplyToDraft
             | EmailErr::Base64DecodeError(_)

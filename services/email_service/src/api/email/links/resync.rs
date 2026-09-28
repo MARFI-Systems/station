@@ -54,6 +54,12 @@ pub async fn resync_link_handler(
     )
     .await?;
 
+    if link.provider == models_email::service::link::UserProvider::Microsoft {
+        return Err(InboxActionError::Unsupported(
+            "Microsoft resync is handled by the read-only folder sync pipeline",
+        ));
+    }
+
     if let Some(active) =
         email_db_client::backfill::job::get::get_active_backfill_job(&ctx.db, link.id)
             .await

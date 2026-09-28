@@ -4,7 +4,7 @@ mod rate_limiter;
 mod token_source;
 
 pub use rate_limiter::{RateBudget, RedisProviderRateLimiter};
-pub use token_source::{EmailServiceTokenSource, StaticTokenSource};
+pub use token_source::{EmailServiceTokenSource, MicrosoftMailboxTokenSource, StaticTokenSource};
 
 use email_api_client::GmailApiClientRepository;
 use email_api_client::domain::service::EmailApiClientServiceImpl;

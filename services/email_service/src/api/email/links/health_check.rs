@@ -5,7 +5,7 @@ use axum::response::{IntoResponse, Json, Response};
 use email_api_client::domain::models::{EmailApiError, TokenFreshness};
 use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use model::response::{EmptyResponse, ErrorResponse};
-use models_email::email::service::pubsub::LinkManagerMessage;
+use models_email::email::service::{link::UserProvider, pubsub::LinkManagerMessage};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -66,7 +66,7 @@ pub async fn health_check_handler(
     .map_err(HealthCheckError::DatabaseError)?;
 
     for link in links {
-        if !link.is_sync_active {
+        if !link.is_sync_active || link.provider != UserProvider::Gmail {
             continue;
         }
 

@@ -12,6 +12,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error, AsRefStr)]
 pub enum DisableSyncError {
+    #[error("Microsoft mailbox disconnect must use the Microsoft link disconnect path")]
+    ReadOnly,
+
     #[error("Failed to enqueue delete notification")]
     EnqueueError(#[from] anyhow::Error),
 }
@@ -19,6 +22,7 @@ pub enum DisableSyncError {
 impl IntoResponse for DisableSyncError {
     fn into_response(self) -> Response {
         let status_code = match &self {
+            DisableSyncError::ReadOnly => StatusCode::BAD_REQUEST,
             DisableSyncError::EnqueueError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
@@ -52,6 +56,8 @@ pub async fn disable_handler(
     authorization: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     link: Extension<Link>,
 ) -> Result<Response, DisableSyncError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| DisableSyncError::ReadOnly)?;
+
     tracing::info!(user_id = %authorization.authorization.user.user_context.user_id, "Disable called");
 
     // Enqueue the delete operation to handle cleanup asynchronously

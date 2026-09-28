@@ -57,8 +57,10 @@ jobs:
 
       - name: Format Rust and collect source patch
         run: |
+          set -euo pipefail
           cargo fmt --all
           git diff --binary -- . ":!Cargo.lock" > "$RUNNER_TEMP/station-m365-format.diff"
+          git diff --name-only -z -- "*.rs" | tar --null -T - -czf "$RUNNER_TEMP/station-m365-formatted-source.tar.gz"
 
       - name: Create disposable runner-only test databases
         run: |
@@ -80,13 +82,18 @@ jobs:
           unset SQLX_OFFLINE RUSTC_WRAPPER
           cargo test --locked -p fusionauth microsoft
           cargo test --locked -p microsoft_oauth_grant_db_utils
+          cargo test --locked -p email_db_client microsoft
+          cargo test --locked -p models_email --lib
+          cargo test --locked -p email --all-features microsoft
           cargo test --locked -p authentication_service microsoft
+          cargo test --locked -p email_service --features microsoft_graph_readonly microsoft
+          cargo test --locked -p email_service --features microsoft_graph_readonly mutation_guard
 
       - name: Type-check native mailbox services against disposable schema
         run: |
           set -euo pipefail
           unset SQLX_OFFLINE RUSTC_WRAPPER
-          cargo check --locked -p authentication_service -p email_service -p email_refresh_handler
+          cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
 
       - name: Upload resolved lockfile and metadata evidence
         if: always()
@@ -98,6 +105,7 @@ jobs:
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
             ${{ runner.temp }}/station-m365-format.diff
+            ${{ runner.temp }}/station-m365-formatted-source.tar.gz
           if-no-files-found: warn
           retention-days: 7
 
@@ -110,6 +118,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -117,7 +126,21 @@ jobs:
       - name: Install pinned workspace dependencies
         run: bun install --frozen-lockfile
 
+      - name: Test changed mailbox UI units
+        working-directory: apps/web
+        run: |
+          set -euo pipefail
+          mapfile -d '' -t tests < <(git diff --name-only -z --relative 105ee334 HEAD -- src | grep -zE '\.(test|spec)\.[jt]sx?$')
+          test "${#tests[@]}" -gt 0
+          bun run test "${tests[@]}"
+
+      - name: Type-check web
+        if: ${{ !cancelled() }}
+        working-directory: apps/web
+        run: bun run type-check
+
       - name: Compile web without deploying or granting mailbox access
+        if: ${{ !cancelled() }}
         working-directory: apps/web
         env:
           MODE: development

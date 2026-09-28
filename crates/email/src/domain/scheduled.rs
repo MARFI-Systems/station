@@ -78,6 +78,7 @@ where
             .into_iter()
             .find(|link| link.id == link_id)
             .ok_or(EmailErr::Unauthorized)?;
+        super::service::ensure_provider_writable(&link)?;
         validate_schedule_change(change, Utc::now())?;
         let signature = if matches!(change, ScheduleChange::Set(_)) {
             let settings = self.email_repo.fetch_email_settings(link_id).await

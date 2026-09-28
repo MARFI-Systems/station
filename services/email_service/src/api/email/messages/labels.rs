@@ -90,6 +90,10 @@ pub async fn handler(
             .into_response()
     })?;
 
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|error| {
+        (StatusCode::BAD_REQUEST, Json(ErrorResponse { message: error.to_string().into() })).into_response()
+    })?;
+
     let label = email_db_client::labels::get::fetch_label_by_id(&ctx.db, body.label_id, link.id)
         .await
         .map_err(|e| {
@@ -132,6 +136,16 @@ pub async fn handler(
         )
             .into_response()
     })?;
+
+    if !all_links_match(link.id, db_messages.iter().map(|message| message.link_id)) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                message: "all messages in a mutation batch must belong to the same inbox".into(),
+            }),
+        )
+            .into_response());
+    }
 
     let missing_ids: Vec<Uuid> = body
         .message_ids
@@ -307,4 +321,24 @@ pub async fn handler(
         }),
     )
         .into_response())
+}
+
+fn all_links_match(
+    expected_link_id: Uuid,
+    link_ids: impl IntoIterator<Item = Uuid>,
+) -> bool {
+    link_ids.into_iter().all(|link_id| link_id == expected_link_id)
+}
+
+#[cfg(test)]
+mod link_scope_test {
+    use super::all_links_match;
+    use uuid::Uuid;
+
+    #[test]
+    fn mutation_batch_rejects_a_different_inbox() {
+        let expected = Uuid::from_u128(1);
+        assert!(all_links_match(expected, [expected, expected]));
+        assert!(!all_links_match(expected, [expected, Uuid::from_u128(2)]));
+    }
 }

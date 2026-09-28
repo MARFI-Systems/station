@@ -18,6 +18,9 @@ pub enum DeleteDraftError {
     #[error("The provided id {0} belongs to a message, not a draft")]
     NotADraft(Uuid),
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Failed to get draft from database")]
     QueryError(#[from] anyhow::Error),
 
@@ -29,7 +32,7 @@ impl IntoResponse for DeleteDraftError {
     fn into_response(self) -> Response {
         let status_code = match self {
             DeleteDraftError::NotFound(_) => StatusCode::NOT_FOUND,
-            DeleteDraftError::NotADraft(_) => StatusCode::BAD_REQUEST,
+            DeleteDraftError::NotADraft(_) | DeleteDraftError::ReadOnly => StatusCode::BAD_REQUEST,
             DeleteDraftError::QueryError(_) | DeleteDraftError::TransactionError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -70,6 +73,7 @@ pub async fn handler(
     link: Extension<Link>,
     Path(draft_id): Path<Uuid>,
 ) -> Result<Response, DeleteDraftError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| DeleteDraftError::ReadOnly)?;
     let message_replying_to = email_db_client::messages::get_simple_messages::get_simple_message(
         &ctx.db,
         &draft_id,
@@ -77,6 +81,10 @@ pub async fn handler(
     )
     .await?
     .ok_or(DeleteDraftError::NotFound(draft_id))?;
+
+    if message_replying_to.link_id != link.id {
+        return Err(DeleteDraftError::NotFound(draft_id));
+    }
 
     if !message_replying_to.is_draft {
         return Err(DeleteDraftError::NotADraft(draft_id));

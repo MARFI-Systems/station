@@ -192,7 +192,7 @@ pub async fn status_handler(
     _authorization: Internal,
     Query(params): Query<OwnerParams>,
 ) -> Result<Json<MicrosoftMailboxStatus>, Response> {
-    available(&ctx)?;
+    // Read-only local status must survive disabled consent or unavailable KMS.
     let grant = microsoft_oauth_grant_db_utils::get_active_microsoft_mailbox_grant(
         &ctx.db,
         &params.fusionauth_user_id,
@@ -216,7 +216,7 @@ pub async fn disconnect_handler(
     _authorization: Internal,
     Query(params): Query<OwnerParams>,
 ) -> Result<StatusCode, Response> {
-    available(&ctx)?;
+    // Internal authorization is still mandatory; local revocation must not depend on OAuth/KMS.
     if microsoft_oauth_grant_db_utils::disconnect_microsoft_mailbox_grant(
         &ctx.db,
         &params.fusionauth_user_id,

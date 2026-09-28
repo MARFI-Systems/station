@@ -74,6 +74,7 @@ impl From<EmailErr> for UpdateThreadLabelError {
             EmailErr::LabelNotFound => UpdateThreadLabelError::NotFound(err.to_string()),
             EmailErr::ThreadEmpty => UpdateThreadLabelError::NotFound(err.to_string()),
             EmailErr::EmptyProviderLabelId => UpdateThreadLabelError::Validation(err.to_string()),
+            EmailErr::ProviderReadOnly => UpdateThreadLabelError::Validation(err.to_string()),
             _ => UpdateThreadLabelError::Internal(err),
         }
     }

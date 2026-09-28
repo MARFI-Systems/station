@@ -25,9 +25,9 @@ impl IntoResponse for UpsertScheduledError {
         let status = match &self.0 {
             EmailErr::MessageNotFound(_) => StatusCode::NOT_FOUND,
             EmailErr::Unauthorized => StatusCode::FORBIDDEN,
-            EmailErr::MessageDeliveryConflict(_) | EmailErr::InvalidScheduleTime => {
-                StatusCode::BAD_REQUEST
-            }
+            EmailErr::MessageDeliveryConflict(_)
+            | EmailErr::InvalidScheduleTime
+            | EmailErr::ProviderReadOnly => StatusCode::BAD_REQUEST,
             _ => {
                 tracing::error!(error=?self.0, "schedule transition failed");
                 StatusCode::INTERNAL_SERVER_ERROR

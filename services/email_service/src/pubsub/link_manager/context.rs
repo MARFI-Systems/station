@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct LinkManagerContext {
+    #[cfg(feature = "microsoft_graph_readonly")]
+    pub microsoft_graph: email_api_client::outbound::microsoft_graph::MicrosoftGraphMailClient,
     pub db: PgPool,
     pub sqs_worker: sqs_worker::SQSWorker,
     pub email_api: GmailApi,

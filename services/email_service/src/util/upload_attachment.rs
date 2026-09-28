@@ -22,6 +22,9 @@ use uuid::Uuid;
 
 #[derive(Error, Debug)]
 pub enum UploadAttachmentError {
+    #[error("Microsoft attachment document/media upload is not supported by the Gmail attachment helper")]
+    ProviderReadOnly,
+
     #[error("Gmail API rate limit exceeded")]
     RateLimited,
 
@@ -75,6 +78,8 @@ pub async fn upload_attachment(
     args: &AttachmentUploadArgs,
 ) -> Result<String, UploadAttachmentError> {
     // Fetching through the email API service applies this context's token and quota policy.
+    ensure_attachment_ingestion_supported(ctx.link.provider)?;
+
     let attachment_data =
         fetch_gmail_attachment_data(ctx.email_api, ctx.link, &args.attachment_metadata).await?;
 
@@ -169,6 +174,32 @@ async fn upload_document_attachment(
 }
 
 /// Fetches the raw attachment data from the Gmail API.
+fn ensure_attachment_ingestion_supported(
+    provider: models_email::service::link::UserProvider,
+) -> Result<(), UploadAttachmentError> {
+    match provider {
+        models_email::service::link::UserProvider::Gmail => Ok(()),
+        models_email::service::link::UserProvider::Microsoft => {
+            Err(UploadAttachmentError::ProviderReadOnly)
+        }
+    }
+}
+
+#[cfg(test)]
+mod provider_test {
+    use super::*;
+    use models_email::service::link::UserProvider;
+
+    #[test]
+    fn gmail_ingestion_is_supported_and_microsoft_is_explicitly_rejected() {
+        assert!(ensure_attachment_ingestion_supported(UserProvider::Gmail).is_ok());
+        assert!(matches!(
+            ensure_attachment_ingestion_supported(UserProvider::Microsoft),
+            Err(UploadAttachmentError::ProviderReadOnly)
+        ));
+    }
+}
+
 async fn fetch_gmail_attachment_data(
     email_api: &GmailApi,
     link: &link::Link,

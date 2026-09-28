@@ -612,3 +612,38 @@ async fn rejects_redirects_without_forwarding_mailbox_bearer() {
     assert!(matches!(result, Err(EmailApiError::Permanent { .. })));
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn resolves_localized_well_known_folder_by_provider_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/inbox"))
+        .and(query_param("$select", FOLDER_SELECT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "opaque-system-folder", "displayName": "Boîte de réception",
+            "parentFolderId": "root", "childFolderCount": 0,
+            "unreadItemCount": 1, "totalItemCount": 2, "isHidden": false
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let folder = client(&server)
+        .get_mail_folder(&token(), "inbox")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(folder.id, "opaque-system-folder");
+    assert_eq!(folder.display_name, "Boîte de réception");
+}
+
+#[tokio::test]
+async fn missing_optional_system_folder_returns_none() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1.0/me/mailFolders/archive"))
+        .respond_with(ResponseTemplate::new(404))
+        .expect(1)
+        .mount(&server)
+        .await;
+    assert!(client(&server).get_mail_folder(&token(), "archive").await.unwrap().is_none());
+}

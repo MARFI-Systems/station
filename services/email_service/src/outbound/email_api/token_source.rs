@@ -293,3 +293,93 @@ fn transient_error(message: impl Into<String>) -> TokenError {
         message: message.into(),
     }
 }
+
+/// Owner-scoped token source for the delegated read-only Microsoft mailbox pipeline.
+#[derive(Clone)]
+pub struct MicrosoftMailboxTokenSource {
+    db: PgPool,
+    auth_service_client: AuthServiceClient,
+    sqs_client: SQS,
+}
+
+impl MicrosoftMailboxTokenSource {
+    /// Creates a Microsoft mailbox token source.
+    pub fn new(db: PgPool, auth_service_client: AuthServiceClient, sqs_client: SQS) -> Self {
+        Self {
+            db,
+            auth_service_client,
+            sqs_client,
+        }
+    }
+
+    /// Fetch a short-lived Graph token only after verifying the active link and mailbox owner.
+    #[tracing::instrument(err, skip(self))]
+    pub async fn get_access_token(&self, link_id: Uuid) -> Result<AccessToken, TokenError> {
+        let link = email_db_client::links::get::fetch_link_by_id(&self.db, link_id)
+            .await
+            .map_err(|_| transient_error("unable to load the linked mailbox"))?
+            .ok_or_else(|| TokenError::Permanent {
+                message: "linked mailbox was not found".to_owned(),
+            })?;
+        if link.provider != models_email::service::link::UserProvider::Microsoft {
+            return Err(TokenError::Permanent {
+                message: "linked mailbox is not a Microsoft mailbox".to_owned(),
+            });
+        }
+
+        let mailbox = email_db_client::microsoft_mailbox::fetch_active_microsoft_mailbox_for_owner(
+            &self.db,
+            &link.fusionauth_user_id,
+            link.id,
+        )
+        .await
+        .map_err(|_| transient_error("unable to load Microsoft mailbox ownership"))?
+        .ok_or_else(|| TokenError::Permanent {
+            message: "Microsoft mailbox is disconnected or not owned by this user".to_owned(),
+        })?;
+
+        let token = self
+            .auth_service_client
+            .get_microsoft_mailbox_access_token(&link.fusionauth_user_id)
+            .await;
+
+        match token {
+            Ok(token) => {
+                if !token.mailbox.email.eq_ignore_ascii_case(&mailbox.user_principal_name)
+                    || token.mailbox.tenant_id != mailbox.tenant_id
+                    || token.mailbox.object_id != mailbox.mailbox_id
+                {
+                    return Err(TokenError::Permanent {
+                        message: "Microsoft token mailbox identity mismatch".to_owned(),
+                    });
+                }
+                clear_stale_reauth_flag(&self.db, link.id).await;
+                Ok(AccessToken::new(token.access_token))
+            }
+            Err(error @ (AuthServiceClientError::Forbidden | AuthServiceClientError::NotFound)) => {
+                tracing::warn!(error=?error, link_id=%link.id, "Microsoft mailbox grant requires reauthorization");
+                if email_db_client::links::update::set_link_needs_reauth(&self.db, link.id)
+                    .await
+                    .unwrap_or(false)
+                {
+                    self.sqs_client
+                        .enqueue_link_manager_notification(
+                            LinkManagerMessage::NotifyReauthRequired { link_id: link.id },
+                        )
+                        .await
+                        .inspect_err(|enqueue_error| {
+                            tracing::error!(error=?enqueue_error, link_id=%link.id, "Failed to enqueue Microsoft reauth notification");
+                        })
+                        .ok();
+                }
+                Err(TokenError::ReauthRequired)
+            }
+            Err(error) => {
+                tracing::warn!(error=?error, link_id=%link.id, "Microsoft access-token acquisition failed");
+                Err(transient_error(
+                    "Microsoft mailbox access token is temporarily unavailable",
+                ))
+            }
+        }
+    }
+}

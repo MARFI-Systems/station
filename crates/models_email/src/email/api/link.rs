@@ -58,12 +58,14 @@ impl SyncStatus {
 #[serde(rename_all = "UPPERCASE")]
 pub enum UserProvider {
     Gmail,
+    Microsoft,
 }
 
 impl UserProvider {
     pub fn as_str(&self) -> &'static str {
         match self {
             UserProvider::Gmail => "GMAIL",
+            UserProvider::Microsoft => "MICROSOFT",
         }
     }
 }
@@ -78,6 +80,7 @@ impl From<crate::email::service::link::UserProvider> for UserProvider {
     fn from(provider: crate::email::service::link::UserProvider) -> Self {
         match provider {
             crate::email::service::link::UserProvider::Gmail => UserProvider::Gmail,
+            crate::email::service::link::UserProvider::Microsoft => UserProvider::Microsoft,
         }
     }
 }
@@ -93,6 +96,8 @@ pub struct Link {
     /// The inbox's own profile photo (its self-contact's SFS photo), if synced.
     pub photo_url: Option<String>,
     pub provider: UserProvider,
+    /// Whether provider-backed mutations are unsupported for this inbox.
+    pub is_read_only: bool,
     pub is_sync_active: bool,
     pub sync_status: SyncStatus,
     /// Whether the link's Google grant needs to be reconnected. Drives the
@@ -130,13 +135,16 @@ impl Link {
         calendar_disabled: bool,
         has_calendar_data: bool,
     ) -> Self {
+        let provider = UserProvider::from(source.provider);
+        let is_read_only = matches!(provider, UserProvider::Microsoft);
         Link {
             id: source.id,
             macro_id: source.macro_id,
             fusionauth_user_id: source.fusionauth_user_id,
             email_address: source.email_address,
             photo_url,
-            provider: UserProvider::from(source.provider),
+            provider,
+            is_read_only,
             is_sync_active: source.is_sync_active,
             sync_status,
             needs_reauth: source.needs_reauth,

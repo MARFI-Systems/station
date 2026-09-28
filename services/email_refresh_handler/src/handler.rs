@@ -6,7 +6,7 @@ use lambda_runtime::{
     tracing::{self},
 };
 use macro_env::Environment;
-use models_email::email::service::pubsub::{DeletionReason, LinkManagerMessage};
+use models_email::email::service::pubsub::{DeletionReason, LinkManagerMessage, MicrosoftSyncOperation};
 use sqlx::types::uuid;
 use sqlx::{Pool, Postgres, Type};
 
@@ -14,6 +14,7 @@ use sqlx::{Pool, Postgres, Type};
 #[sqlx(type_name = "email_user_provider_enum", rename_all = "UPPERCASE")]
 pub enum DbUserProvider {
     Gmail,
+    Microsoft,
 }
 
 #[tracing::instrument(skip(ctx, _event))]
@@ -23,7 +24,8 @@ pub async fn handler(
 ) -> Result<(), Error> {
     tokio::try_join!(
         send_refresh_messages(&ctx),
-        send_health_check_messages(&ctx)
+        send_health_check_messages(&ctx),
+        send_microsoft_sync_messages(&ctx)
     )?;
 
     // only send delete messages once daily, during the night
@@ -245,4 +247,42 @@ pub async fn fetch_inactive_link_ids(
     )
     .fetch_all(pool)
     .await
+}
+
+/// Schedules a fresh bounded folder walk for active Microsoft mailboxes on the configured health-poll cadence. The
+/// link-manager worker fans this out into per-folder delta units and uses cursor CAS for overlap.
+async fn send_microsoft_sync_messages(ctx: &context::Context) -> Result<(), Error> {
+    let interval_hours = ctx.config.health_poll_interval_hours as i32;
+    if interval_hours <= 0 {
+        return Ok(());
+    }
+    let bucket = (chrono::Utc::now().timestamp().div_euclid(3600) % i64::from(interval_hours)) as i32;
+    let provider_filter = DbUserProvider::Microsoft;
+    let link_ids = sqlx::query_scalar!(
+        r#"SELECT id as "link_id" FROM email_links
+           WHERE is_sync_active = TRUE AND provider = $1
+             AND (abs(hashtext(id::text)::bigint) % $2::int4) = $3::int4"#,
+        provider_filter as _,
+        interval_hours,
+        bucket
+    )
+    .fetch_all(&ctx.db)
+    .await
+    .unwrap_or_else(|error| {
+        tracing::error!(error=?error, "Error fetching Microsoft mailbox links for sync");
+        Vec::new()
+    });
+    for link_id in link_ids {
+        ctx.sqs_client
+            .enqueue_link_manager_notification(LinkManagerMessage::MicrosoftSync {
+                link_id,
+                sync_operation: MicrosoftSyncOperation::DiscoverFolders,
+            })
+            .await
+            .inspect_err(|error| {
+                tracing::error!(error=?error, link_id=%link_id, "Error enqueueing Microsoft mailbox sync");
+            })
+            .ok();
+    }
+    Ok(())
 }

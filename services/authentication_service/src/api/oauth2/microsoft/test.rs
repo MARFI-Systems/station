@@ -4,7 +4,6 @@ use std::{
 };
 
 use fusionauth::microsoft::oauth::{MicrosoftExchangeTokenResponse, MicrosoftUserInfo};
-use http_body_util::BodyExt;
 use reqwest::StatusCode;
 use uuid::Uuid;
 

@@ -14,6 +14,9 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Error, AsRefStr)]
 pub enum PatchSettingsError {
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Failed to update settings")]
     DatabaseError(#[from] anyhow::Error),
     /// At least one signature image couldn't be fetched (e.g. pasted from
@@ -33,6 +36,9 @@ pub struct UnresolvedSignatureImagesError {
 impl IntoResponse for PatchSettingsError {
     fn into_response(self) -> Response {
         match self {
+            PatchSettingsError::ReadOnly => {
+                (StatusCode::BAD_REQUEST, self.to_string()).into_response()
+            }
             PatchSettingsError::DatabaseError(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
             }
@@ -78,6 +84,7 @@ pub async fn patch_settings_handler(
     link: Extension<Link>,
     Json(api_settings): Json<PatchSettingsRequest>,
 ) -> Result<Json<PatchSettingsResponse>, PatchSettingsError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| PatchSettingsError::ReadOnly)?;
     // The signature is user-supplied HTML; sanitize at this trust boundary
     // before it is persisted (and later rendered into compose bodies).
     let mut settings = api_settings.settings;

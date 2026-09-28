@@ -188,6 +188,31 @@ impl MicrosoftGraphMailClient {
         })
     }
 
+    /// Reads one folder by immutable provider ID or a Graph well-known name.
+    ///
+    /// Resolve names such as `inbox` to provider IDs rather than inferring
+    /// semantics from localized or user-editable display names. A missing
+    /// optional system folder returns `None`; all other failures retain their
+    /// typed retry/authorization behavior.
+    pub async fn get_mail_folder(
+        &self,
+        access_token: &AccessToken,
+        folder_id_or_well_known_name: &str,
+    ) -> Result<Option<MicrosoftGraphMailFolder>, EmailApiError> {
+        let mut url = self.graph_url(&["me", "mailFolders", folder_id_or_well_known_name]);
+        url.query_pairs_mut().append_pair("$select", FOLDER_SELECT);
+        let response = self.send_get(url, access_token, None).await?;
+        if response.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        let response = successful_response(response).await?;
+        let folder: MicrosoftGraphMailFolder = decode_json_limited(response).await?;
+        if folder.id.is_empty() {
+            return Err(invalid_response("folder response has no provider identifier"));
+        }
+        Ok(Some(folder))
+    }
+
     /// Lists a bounded number of pages of root folders or direct children.
     ///
     /// Pass `parent_folder_id = None` for folders directly below the mailbox

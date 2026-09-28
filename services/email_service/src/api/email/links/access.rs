@@ -25,6 +25,9 @@ pub enum InboxActionError {
     #[error("not authorized for this inbox")]
     Forbidden,
 
+    #[error("{0}")]
+    Unsupported(&'static str),
+
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -34,6 +37,7 @@ impl IntoResponse for InboxActionError {
         let status = match &self {
             InboxActionError::NotFound => StatusCode::NOT_FOUND,
             InboxActionError::Forbidden => StatusCode::FORBIDDEN,
+            InboxActionError::Unsupported(_) => StatusCode::BAD_REQUEST,
             InboxActionError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 

@@ -23,6 +23,9 @@ pub enum AddDraftAttachmentError {
     #[error("Draft not found")]
     DraftNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Internal error")]
     InternalError(#[from] anyhow::Error),
 }
@@ -30,7 +33,7 @@ pub enum AddDraftAttachmentError {
 impl IntoResponse for AddDraftAttachmentError {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            AddDraftAttachmentError::Validation(_) => StatusCode::BAD_REQUEST,
+            AddDraftAttachmentError::Validation(_) | AddDraftAttachmentError::ReadOnly => StatusCode::BAD_REQUEST,
             AddDraftAttachmentError::DraftNotFound => StatusCode::NOT_FOUND,
             AddDraftAttachmentError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -95,6 +98,7 @@ pub async fn handler(
     Path(PathParams { id: draft_id }): Path<PathParams>,
     Json(req): Json<AddDraftAttachmentRequest>,
 ) -> Result<Json<AddDraftAttachmentResponse>, AddDraftAttachmentError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| AddDraftAttachmentError::ReadOnly)?;
     validate_request(&ctx, link.id, draft_id, &req).await?;
 
     let file_type = FileType::split_suffix_match(req.file_name.as_str())

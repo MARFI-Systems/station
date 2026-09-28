@@ -274,7 +274,7 @@ async fn status(
     State(ctx): State<ApiContext>,
     user: User,
 ) -> Result<Json<MicrosoftMailboxStatus>, MailboxError> {
-    enabled(&ctx)?;
+    // Local grant visibility and cleanup remain available when new consent is disabled.
     let owner = &user.authorization.user_context.fusion_user_id;
     Ok(Json(status_for_owner(&ctx, owner).await?))
 }
@@ -306,7 +306,7 @@ async fn status_for_owner(
 }
 
 async fn disconnect(State(ctx): State<ApiContext>, user: User) -> Result<StatusCode, MailboxError> {
-    enabled(&ctx)?;
+    // Disconnect needs only owner authorization and the database, never KMS or OAuth enablement.
     let owner = &user.authorization.user_context.fusion_user_id;
     if microsoft_oauth_grant_db_utils::disconnect_microsoft_mailbox_grant(&ctx.db, owner)
         .await

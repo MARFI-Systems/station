@@ -93,6 +93,25 @@ pub enum LinkManagerMessage {
     /// Gmail watch or syncing contacts. Enqueued by the periodic health poll so a dead
     /// grant surfaces between the daily full refreshes.
     HealthCheck { link_id: Uuid },
+    /// Advances one bounded unit of the native read-only Microsoft mailbox sync.
+    MicrosoftSync {
+        link_id: Uuid,
+        sync_operation: MicrosoftSyncOperation,
+    },
+}
+
+/// Small resumable units used by the Microsoft mailbox worker.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+pub enum MicrosoftSyncOperation {
+    DiscoverFolders,
+    PurgeFolder { folder_id: String },
+    SyncFolder {
+        folder_id: String,
+        expected_generation: i64,
+        #[serde(default)]
+        rebuild: bool,
+    },
 }
 
 /// The message we send from the email_scheduled_handler lambda to the service via SQS to trigger
@@ -107,4 +126,37 @@ pub struct ScheduledPubsubMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SFSUploaderMessage {
     pub contact: Contact,
+}
+
+#[cfg(test)]
+mod microsoft_sync_test {
+    use super::*;
+
+    #[test]
+    fn microsoft_sync_queue_payload_is_explicit_and_resumable() {
+        let value = serde_json::to_value(LinkManagerMessage::MicrosoftSync {
+            link_id: Uuid::nil(),
+            sync_operation: MicrosoftSyncOperation::SyncFolder {
+                folder_id: "opaque-folder-id".into(),
+                expected_generation: 7,
+                rebuild: true,
+            },
+        })
+        .unwrap();
+        assert_eq!(value["operation"], "MicrosoftSync");
+        assert_eq!(value["sync_operation"]["phase"], "sync_folder");
+        assert_eq!(value["sync_operation"]["folder_id"], "opaque-folder-id");
+        let round_trip: LinkManagerMessage = serde_json::from_value(value).unwrap();
+        assert!(matches!(
+            round_trip,
+            LinkManagerMessage::MicrosoftSync {
+                sync_operation: MicrosoftSyncOperation::SyncFolder {
+                    expected_generation: 7,
+                    rebuild: true,
+                    ..
+                },
+                ..
+            }
+        ));
+    }
 }

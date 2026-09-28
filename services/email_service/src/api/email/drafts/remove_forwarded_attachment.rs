@@ -18,6 +18,9 @@ pub enum RemoveForwardedAttachmentError {
     #[error("Attachment not found")]
     AttachmentNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Internal error")]
     InternalError(#[from] anyhow::Error),
 }
@@ -25,6 +28,7 @@ pub enum RemoveForwardedAttachmentError {
 impl IntoResponse for RemoveForwardedAttachmentError {
     fn into_response(self) -> Response {
         let status_code = match &self {
+            RemoveForwardedAttachmentError::ReadOnly => StatusCode::BAD_REQUEST,
             RemoveForwardedAttachmentError::DraftNotFound
             | RemoveForwardedAttachmentError::AttachmentNotFound => StatusCode::NOT_FOUND,
             RemoveForwardedAttachmentError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -70,6 +74,7 @@ pub async fn handler(
         attachment_id,
     }): Path<PathParams>,
 ) -> Result<impl IntoResponse, RemoveForwardedAttachmentError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| RemoveForwardedAttachmentError::ReadOnly)?;
     // Ensure draft exists
     if !email_db_client::messages::get::draft_exists_with_id(&ctx.db, link.id, draft_id).await? {
         return Err(RemoveForwardedAttachmentError::DraftNotFound);

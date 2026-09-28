@@ -81,3 +81,37 @@ fn validate_sender_address_trims_and_lowercases() {
         "teo@macro.com"
     );
 }
+
+fn provider_link(provider: crate::domain::models::UserProvider) -> crate::domain::models::Link {
+    crate::domain::models::Link {
+        id: uuid::Uuid::nil(),
+        macro_id: macro_user_id::user_id::MacroUserIdStr::try_from(
+            "macro|owner@example.com".to_owned(),
+        )
+        .unwrap(),
+        fusionauth_user_id: "owner".to_owned(),
+        email_address: macro_user_id::email::EmailStr::try_from("owner@example.com".to_owned())
+            .unwrap(),
+        provider,
+        is_sync_active: true,
+        is_primary: true,
+        created_at: Default::default(),
+        updated_at: Default::default(),
+    }
+}
+
+#[test]
+fn microsoft_provider_denies_mutations() {
+    assert!(matches!(
+        super::ensure_provider_writable(&provider_link(
+            crate::domain::models::UserProvider::Microsoft,
+        )),
+        Err(EmailErr::ProviderReadOnly)
+    ));
+}
+
+#[test]
+fn gmail_provider_remains_writable() {
+    super::ensure_provider_writable(&provider_link(crate::domain::models::UserProvider::Gmail))
+        .expect("Gmail mutation behavior must not regress");
+}

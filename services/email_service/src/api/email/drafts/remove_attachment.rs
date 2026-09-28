@@ -19,6 +19,9 @@ pub enum RemoveDraftAttachmentError {
     #[error("Attachment not found")]
     AttachmentNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Internal error")]
     InternalError(#[from] anyhow::Error),
 }
@@ -26,6 +29,7 @@ pub enum RemoveDraftAttachmentError {
 impl IntoResponse for RemoveDraftAttachmentError {
     fn into_response(self) -> Response {
         let status_code = match &self {
+            RemoveDraftAttachmentError::ReadOnly => StatusCode::BAD_REQUEST,
             RemoveDraftAttachmentError::DraftNotFound
             | RemoveDraftAttachmentError::AttachmentNotFound => StatusCode::NOT_FOUND,
             RemoveDraftAttachmentError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -73,6 +77,7 @@ pub async fn handler(
         attachment_id,
     }): Path<PathParams>,
 ) -> Result<impl IntoResponse, RemoveDraftAttachmentError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| RemoveDraftAttachmentError::ReadOnly)?;
     // ensure draft exists
     if !email_db_client::messages::get::draft_exists_with_id(&ctx.db, link.id, draft_id).await? {
         return Err(RemoveDraftAttachmentError::DraftNotFound);

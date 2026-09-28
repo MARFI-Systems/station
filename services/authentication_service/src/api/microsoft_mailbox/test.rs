@@ -17,7 +17,7 @@ fn browser_state_contains_no_expiry_owner_or_pkce_verifier() {
 fn tampering_state_secret_changes_server_match_hash() {
     let original = Sha256::digest(b"state-secret-a");
     let tampered = Sha256::digest(b"state-secret-b");
-    assert_ne!(original.as_slice(), tampered.as_slice());
+    assert_ne!(original, tampered);
 }
 
 #[test]

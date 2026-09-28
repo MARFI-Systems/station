@@ -39,6 +39,7 @@ impl IntoResponse for GetAttachmentDocumentIdError {
         let status_code = match &self {
             GetAttachmentDocumentIdError::AttachmentNotFound => StatusCode::NOT_FOUND,
             GetAttachmentDocumentIdError::AccessDenied => StatusCode::FORBIDDEN,
+            GetAttachmentDocumentIdError::UploadError(UploadAttachmentError::ProviderReadOnly) => StatusCode::BAD_REQUEST,
             GetAttachmentDocumentIdError::UploadError(UploadAttachmentError::RateLimited) => {
                 StatusCode::TOO_MANY_REQUESTS
             }
@@ -85,6 +86,15 @@ pub async fn handler(
     link: Extension<Link>,
     Path(attachment_id): Path<Uuid>,
 ) -> Result<Json<GetAttachmentDocumentIDResponse>, GetAttachmentDocumentIdError> {
+    // Verify ownership/shared access before every fast path and reject Microsoft before
+    // entering the Gmail-backed SFS/DSS ingestion helper.
+    let selected_owner_link = verify_access_and_get_owner(&ctx, &link, attachment_id).await?;
+    if selected_owner_link.provider == models_email::service::link::UserProvider::Microsoft {
+        return Err(GetAttachmentDocumentIdError::UploadError(
+            UploadAttachmentError::ProviderReadOnly,
+        ));
+    }
+
     // Fast path: return ID if attachment already exists in Macro
     if let Some(document_id) =
         email_db_client::attachments::provider::get_document_id_by_att_id(&ctx.db, attachment_id)
@@ -118,7 +128,7 @@ pub async fn handler(
     }
 
     // Verify access and resolve the owner's link.
-    let owner_link = verify_access_and_get_owner(&ctx, &link, attachment_id).await?;
+    let owner_link = selected_owner_link;
 
     // Prepare and execute upload to owner's macro account
     let upload_args = prepare_upload_args(&ctx, attachment_id).await?;

@@ -21,6 +21,9 @@ pub enum ArchiveThreadError {
     #[error("Thread not found")]
     ThreadNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Database error")]
     DatabaseError(#[from] anyhow::Error),
 
@@ -32,6 +35,7 @@ impl IntoResponse for ArchiveThreadError {
     fn into_response(self) -> Response {
         let status_code = match &self {
             ArchiveThreadError::ThreadNotFound => StatusCode::NOT_FOUND,
+            ArchiveThreadError::ReadOnly => StatusCode::BAD_REQUEST,
             ArchiveThreadError::DatabaseError(_) | ArchiveThreadError::TransactionError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -86,6 +90,8 @@ pub async fn archived_handler(
     )
     .await?
     .ok_or(ArchiveThreadError::ThreadNotFound)?;
+
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| ArchiveThreadError::ReadOnly)?;
 
     let thread =
         email_db_client::threads::get::get_thread_by_id_and_link_id(&ctx.db, thread_id, link.id)

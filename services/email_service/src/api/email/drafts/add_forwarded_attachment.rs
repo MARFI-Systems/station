@@ -18,6 +18,9 @@ pub enum AddForwardedAttachmentError {
     #[error("Attachment not found")]
     AttachmentNotFound,
 
+    #[error("Microsoft mailboxes are read-only")]
+    ReadOnly,
+
     #[error("Internal error")]
     InternalError(#[from] anyhow::Error),
 }
@@ -25,6 +28,7 @@ pub enum AddForwardedAttachmentError {
 impl IntoResponse for AddForwardedAttachmentError {
     fn into_response(self) -> Response {
         let status_code = match &self {
+            AddForwardedAttachmentError::ReadOnly => StatusCode::BAD_REQUEST,
             AddForwardedAttachmentError::DraftNotFound
             | AddForwardedAttachmentError::AttachmentNotFound => StatusCode::NOT_FOUND,
             AddForwardedAttachmentError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -85,6 +89,7 @@ pub async fn handler(
     Path(PathParams { id: draft_id }): Path<PathParams>,
     Json(req): Json<AddForwardedAttachmentRequest>,
 ) -> Result<(StatusCode, Json<AddForwardedAttachmentResponse>), AddForwardedAttachmentError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| AddForwardedAttachmentError::ReadOnly)?;
     // Ensure draft exists and belongs to this link
     if !email_db_client::messages::get::draft_exists_with_id(&ctx.db, link.id, draft_id).await? {
         return Err(AddForwardedAttachmentError::DraftNotFound);

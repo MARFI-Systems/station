@@ -67,11 +67,15 @@ pub async fn list_links_handler(
                 inbox.link.needs_reauth,
                 inbox.latest_backfill_status,
             );
-            let needs_calendar_permission =
-                !calendar_events::domain::models::GoogleScopeSet::from_scopes(
-                    inbox.google_granted_scopes,
-                )
-                .has_calendar_capability();
+            let needs_calendar_permission = match inbox.link.provider {
+                models_email::service::link::UserProvider::Gmail => {
+                    !calendar_events::domain::models::GoogleScopeSet::from_scopes(
+                        inbox.google_granted_scopes,
+                    )
+                    .has_calendar_capability()
+                }
+                models_email::service::link::UserProvider::Microsoft => false,
+            };
             api::link::Link::new(
                 inbox.link,
                 api::settings::Settings::from(inbox.settings),

@@ -14,6 +14,9 @@ pub enum ListBlockedError {
     #[error("Insufficient Gmail permissions. Please re-authenticate to grant the required scope.")]
     Forbidden,
 
+    #[error("Microsoft blocked-sender filters are not supported in read-only mode")]
+    ReadOnly,
+
     #[error("Email provider error: {0}")]
     Provider(EmailApiError),
 
@@ -24,6 +27,7 @@ pub enum ListBlockedError {
 impl IntoResponse for ListBlockedError {
     fn into_response(self) -> Response {
         let (status_code, headers) = match &self {
+            ListBlockedError::ReadOnly => (StatusCode::BAD_REQUEST, Default::default()),
             ListBlockedError::Forbidden => (StatusCode::FORBIDDEN, Default::default()),
             ListBlockedError::Provider(error) => (
                 crate::api::email::provider_error::provider_error_status(error),
@@ -82,6 +86,7 @@ pub async fn handler(
     State(ctx): State<ApiContext>,
     link: Extension<Link>,
 ) -> Result<Json<ListBlockedResponse>, ListBlockedError> {
+    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| ListBlockedError::ReadOnly)?;
     let blocked_emails = ctx.email_api.list_blocked_senders(link.id).await?;
 
     Ok(Json(ListBlockedResponse { blocked_emails }))

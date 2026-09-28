@@ -47,7 +47,7 @@ pub async fn handler(
     Path(attachment_id): Path<Uuid>,
 ) -> Result<Response, Response> {
     // Resolve which of the caller's inboxes owns this attachment. Each inbox is a
-    // distinct Google account, so the owning link also determines the Gmail token.
+    // distinct provider account, so the owning link also determines token dispatch.
     let links = email_db_client::links::get::fetch_inboxes_for_macro_id(
         &ctx.db,
         &authorization.authorization.user.user_context.user_id,
@@ -145,10 +145,30 @@ pub async fn handler(
                 .into_response()
         })?;
 
-        let attachment_data = ctx
-            .email_api
-            .get_attachment(link.id, &message_provider_id, provider_attachment_id)
-            .await
+        let attachment_data = match link.provider {
+            models_email::service::link::UserProvider::Gmail => ctx.email_api
+                .get_attachment(link.id, &message_provider_id, provider_attachment_id).await,
+            models_email::service::link::UserProvider::Microsoft => {
+                #[cfg(feature = "microsoft_graph_readonly")]
+                {
+                    match crate::outbound::email_api::MicrosoftMailboxTokenSource::new(
+                        ctx.db.clone(), ctx.auth_service_client.as_ref().clone(), ctx.sqs_client.as_ref().clone(),
+                    ).get_access_token(link.id).await {
+                        Ok(token) => email_api_client::outbound::microsoft_graph::MicrosoftGraphMailClient::default()
+                            .get_attachment_bytes(&token, &message_provider_id, provider_attachment_id).await,
+                        Err(error) => Err(match error {
+                            email_api_client::domain::models::TokenError::ReauthRequired => email_api_client::domain::models::EmailApiError::AuthRequired,
+                            email_api_client::domain::models::TokenError::Transient { message } => email_api_client::domain::models::EmailApiError::Transient { message },
+                            email_api_client::domain::models::TokenError::Permanent { message } => email_api_client::domain::models::EmailApiError::Permanent { message },
+                        }),
+                    }
+                }
+                #[cfg(not(feature = "microsoft_graph_readonly"))]
+                {
+                    Err(email_api_client::domain::models::EmailApiError::Permanent { message: "Microsoft mailbox sync is disabled".into() })
+                }
+            }
+        }
             .map_err(|e| {
                 tracing::warn!(error=?e, "error fetching attachment from email provider");
                 (

@@ -72,6 +72,7 @@ default = [
 gmail_webhook_auth = []
 local_auth = ["macro_authorization/local_auth"]
 local_queue = []
+microsoft_graph_readonly = ["email_api_client/outbound-microsoft-graph"]
 sfs_map = []
 sfs_delete = []
 

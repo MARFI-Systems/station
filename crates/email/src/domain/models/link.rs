@@ -9,12 +9,14 @@ mod test;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UserProvider {
     Gmail,
+    Microsoft,
 }
 
 impl UserProvider {
     pub fn as_str(&self) -> &'static str {
         match self {
             UserProvider::Gmail => "GMAIL",
+            UserProvider::Microsoft => "MICROSOFT",
         }
     }
 }

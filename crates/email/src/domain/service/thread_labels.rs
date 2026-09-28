@@ -9,7 +9,7 @@ use frecency::domain::ports::FrecencyQueryService;
 use macro_event_broker::MacroEventBroker;
 use uuid::Uuid;
 
-use super::EmailServiceImpl;
+use super::{EmailServiceImpl, ensure_provider_writable};
 
 /// Facts captured before a label write, used only if provider enqueue fails.
 struct ThreadLabelRollback<'a> {
@@ -40,6 +40,7 @@ where
             .await
             .map_err(|e| EmailErr::RepoErr(anyhow::Error::from(e)))?
             .ok_or(EmailErr::ThreadNotFound)?;
+        ensure_provider_writable(&link)?;
 
         let messages = self
             .email_repo
@@ -94,6 +95,7 @@ where
             .await
             .map_err(|e| EmailErr::RepoErr(anyhow::Error::from(e)))?
             .ok_or(EmailErr::ThreadNotFound)?;
+        ensure_provider_writable(&link)?;
 
         // Resolve from the authorized thread's inbox, never the caller's primary
         // inbox: multi-inbox users have a distinct UNREAD label for each link.
@@ -125,6 +127,7 @@ where
             .await
             .map_err(|e| EmailErr::RepoErr(anyhow::Error::from(e)))?
             .ok_or(EmailErr::ThreadNotFound)?;
+        ensure_provider_writable(&link)?;
         let thread = self
             .email_repo
             .thread_by_id(thread_id)
@@ -161,6 +164,7 @@ where
             .await
             .map_err(|e| EmailErr::RepoErr(anyhow::Error::from(e)))?
             .ok_or(EmailErr::ThreadNotFound)?;
+        ensure_provider_writable(&link)?;
 
         self.update_thread_labels_impl(&link, thread_id, label_id, add)
             .await
@@ -187,6 +191,7 @@ where
         add: bool,
         actor: Option<macro_user_id::user_id::MacroUserIdStr<'static>>,
     ) -> Result<UpdateThreadLabelsResult, EmailErr> {
+        ensure_provider_writable(link)?;
         let label = self
             .email_repo
             .get_label_by_id(label_id, link.id)
