@@ -85,12 +85,15 @@ impl From<LinkLabel> for GraphqlEmailLabel {
 pub enum GraphqlEmailProvider {
     /// Google Gmail.
     Gmail,
+    /// Microsoft 365 / Outlook.
+    Microsoft,
 }
 
 impl From<UserProvider> for GraphqlEmailProvider {
     fn from(provider: UserProvider) -> Self {
         match provider {
             UserProvider::Gmail => Self::Gmail,
+            UserProvider::Microsoft => Self::Microsoft,
         }
     }
 }
@@ -185,5 +188,25 @@ impl From<UserEmailLink> for GraphqlEmailLink {
             created_at: link.created_at.to_rfc3339(),
             updated_at: link.updated_at.to_rfc3339(),
         }
+    }
+}
+
+#[cfg(test)]
+mod provider_test {
+    use super::*;
+
+    /// Each native `UserProvider` variant must map to its own honest
+    /// `GraphqlEmailProvider` variant. Microsoft must never be reported as
+    /// Gmail (or any other provider) in the GraphQL layer.
+    #[test]
+    fn user_provider_maps_to_matching_graphql_provider() {
+        assert_eq!(
+            GraphqlEmailProvider::from(UserProvider::Gmail),
+            GraphqlEmailProvider::Gmail
+        );
+        assert_eq!(
+            GraphqlEmailProvider::from(UserProvider::Microsoft),
+            GraphqlEmailProvider::Microsoft
+        );
     }
 }

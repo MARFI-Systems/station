@@ -81,6 +81,7 @@ jobs:
           cargo test --locked -p microsoft_oauth_grant_db_utils
           cargo test --locked -p email_db_client microsoft
           cargo test --locked -p models_email --lib
+          cargo test --locked -p graphql_email provider_test
           cargo test --locked -p email --all-features microsoft
           cargo test --locked -p authentication_service microsoft
           cargo test --locked -p email_service --features microsoft_graph_readonly microsoft
@@ -91,6 +92,9 @@ jobs:
           set -euo pipefail
           unset SQLX_OFFLINE RUSTC_WRAPPER
           cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
+
+      - name: Generate canonical GraphQL schema artifact
+        run: cargo run --locked -p complete_graph --bin graphql_schema -- "$RUNNER_TEMP/station-schema.graphql"
 
       - name: Generate workspace SQLx metadata on the disposable runner
         run: |
@@ -122,6 +126,7 @@ jobs:
           name: station-m365-build-evidence
           path: |
             Cargo.lock
+            ${{ runner.temp }}/station-schema.graphql
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
             ${{ runner.temp }}/station-m365-sqlx-status.txt
