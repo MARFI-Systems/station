@@ -151,7 +151,7 @@ pub async fn handler(
             models_email::service::link::UserProvider::Microsoft => {
                 #[cfg(feature = "microsoft_graph_readonly")]
                 {
-                    match crate::outbound::email_api::MicrosoftMailboxTokenSource::new(
+                    match email_service::outbound::email_api::MicrosoftMailboxTokenSource::new(
                         ctx.db.clone(), ctx.auth_service_client.as_ref().clone(), ctx.sqs_client.as_ref().clone(),
                     ).get_access_token(link.id).await {
                         Ok(token) => email_api_client::outbound::microsoft_graph::MicrosoftGraphMailClient::default()
