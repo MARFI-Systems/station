@@ -2,6 +2,10 @@ import { DEFAULT_ROUTE } from '@app/constants/defaultRoute';
 import { ROUTER_BASE } from '@app/constants/routerBase';
 import { makeEmailAuthComponents } from '@app/features/auth/EmailAuth';
 import { Login } from '@app/features/auth/Login';
+import {
+  MICROSOFT_MAILBOX_COMPLETION_PATH,
+  MicrosoftMailboxCompletionRoute,
+} from '@app/features/auth/MicrosoftMailboxCompletionRoute';
 import { MobileAuthWelcome } from '@app/features/auth/mobile-onboarding/MobileAuthWelcome';
 import { MobileOnboarding } from '@app/features/auth/mobile-onboarding/MobileOnboarding';
 import { setCookie } from '@app/features/auth/Shared';
@@ -256,6 +260,10 @@ const ROUTES: RouteDefinition[] = [
   {
     path: LINK_CALLBACK_PATH,
     component: EmailLinkCallback,
+  },
+  {
+    path: MICROSOFT_MAILBOX_COMPLETION_PATH,
+    component: MicrosoftMailboxCompletionRoute,
   },
   {
     path: '/login/popup/success',

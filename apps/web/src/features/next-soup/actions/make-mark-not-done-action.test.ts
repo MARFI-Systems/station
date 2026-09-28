@@ -17,6 +17,14 @@ const mocks = vi.hoisted(() => ({
   ),
   alert: vi.fn(),
   success: vi.fn(),
+  isEmailEntityWritable: vi.fn(() => true),
+}));
+
+// Capability resolution has its own dedicated tests
+// (core/email-link/entity-capability.test.ts); default to writable so every
+// existing case below keeps testing this action's own logic.
+vi.mock('@core/email-link/entity-capability', () => ({
+  isEmailEntityWritable: mocks.isEmailEntityWritable,
 }));
 
 vi.mock('@core/component/Toast/Toast', () => ({
@@ -61,6 +69,18 @@ describe('makeMarkNotDoneAction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.threadCanBeMarkedNotDone.mockImplementation(async () => true);
+    mocks.isEmailEntityWritable.mockReturnValue(true);
+  });
+
+  it('never unarchives a read-only email, the same choke point keyboard, context menu, and bulk multi-select all share', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    const readOnlyDoneEmail = doneEmail('ms-thread');
+
+    expect(createAction().canExecute(readOnlyDoneEmail)).toBe(false);
+
+    await createAction().execute([readOnlyDoneEmail]);
+    expect(mocks.threadCanBeMarkedNotDone).not.toHaveBeenCalled();
+    expect(mocks.executeMarkEntitiesUndone).not.toHaveBeenCalled();
   });
 
   it('unarchives a thread that has an inbound message', async () => {

@@ -292,3 +292,16 @@ export function IntegrationRow(props: {
     </div>
   );
 }
+
+/**
+ * Small uppercase status label used beside an inbox's address inside a
+ * settings card row (e.g. "Primary", "Shared", "Read-only"). Shared between
+ * the Gmail and Microsoft 365 inbox rows so both read the same chip style.
+ */
+export function Chip(props: { label: string }) {
+  return (
+    <span class="shrink-0 rounded bg-edge-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
+      {props.label}
+    </span>
+  );
+}

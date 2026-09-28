@@ -6,6 +6,14 @@ const mocks = vi.hoisted(() => ({
   blockSenderWithToast: vi.fn(async () => {}),
   filterAction: vi.fn(async () => {}),
   primaryLinkId: 'link-primary',
+  isEmailEntityWritable: vi.fn(() => true),
+}));
+
+// Capability resolution has its own dedicated tests
+// (core/email-link/entity-capability.test.ts); default to writable so every
+// existing case below keeps testing this action's own logic.
+vi.mock('@core/email-link/entity-capability', () => ({
+  isEmailEntityWritable: mocks.isEmailEntityWritable,
 }));
 
 vi.mock('@queries/email/link', () => ({
@@ -32,6 +40,7 @@ const emailEntity = (over: Partial<EntityData> = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.isEmailEntityWritable.mockReturnValue(true);
 });
 
 describe('makeSenderFilterAction', () => {
@@ -99,9 +108,35 @@ describe('makeSenderFilterAction', () => {
       undefined
     );
   });
+
+  it('never runs the filter action on a read-only email (backs both mark-signal and mark-noise)', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    await createRoot(async (dispose) => {
+      const action = makeSenderFilterAction(mocks.filterAction);
+      expect(action.canExecute(emailEntity({ linkId: 'link-a' }))).toBe(false);
+      await action.execute([emailEntity({ linkId: 'link-a' })]);
+      dispose();
+    });
+
+    expect(mocks.filterAction).not.toHaveBeenCalled();
+  });
 });
 
 describe('makeBlockSenderAction', () => {
+  it('never blocks on a read-only email, the same choke point keyboard, context menu, and bulk multi-select all share', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    await createRoot(async (dispose) => {
+      const action = makeBlockSenderAction();
+      expect(
+        action.canExecute(emailEntity({ linkId: 'link-secondary' }))
+      ).toBe(false);
+      await action.execute([emailEntity({ linkId: 'link-secondary' })]);
+      dispose();
+    });
+
+    expect(mocks.blockSenderWithToast).not.toHaveBeenCalled();
+  });
+
   it('blocks on the inbox the thread belongs to', async () => {
     await createRoot(async (dispose) => {
       const action = makeBlockSenderAction();

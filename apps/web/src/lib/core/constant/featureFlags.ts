@@ -464,6 +464,24 @@ export const enableMultiInbox = defineFlag({
   default: onInDev,
 });
 
+/**
+ * Shows the Microsoft 365 (Outlook) connect option in Settings > Connected
+ * accounts and its read-only mailbox UI, alongside the existing Gmail card.
+ * The full round trip (`POST /microsoft-mailbox/connect`, the auth-service
+ * completion redirect to `/settings/connections`, and
+ * `POST /email/links/microsoft/init`) is real and implemented server-side,
+ * but depends on `microsoft_mailbox_completion_url` being deployment-
+ * configured correctly and on regenerating the frontend's email-service
+ * OpenAPI client for `Link.provider`/`is_read_only` — see
+ * docs/AGENT_GUIDE/email-microsoft365.md before enabling. Off everywhere,
+ * including dev, until PostHog enables it or those gaps close — override
+ * locally with VITE_ENABLE_MICROSOFT365_EMAIL=true.
+ */
+export const enableMicrosoft365Email = defineFlag({
+  key: 'enable-microsoft365-email',
+  env: 'ENABLE_MICROSOFT365_EMAIL',
+});
+
 export const enableSoupGroupBy = defineFlag({
   key: 'enable-soup-group-by',
   default: onInDev,

@@ -2,6 +2,9 @@ import { decodeBase64Utf8 } from '@app/features/email-compose/core/decode-base64
 import { plainTextToHtml } from '@app/features/email-compose/core/plain-text-to-html';
 import { ReplyInputView } from '@app/features/email-compose/views/reply-input';
 import type { EmailMessage } from '@app/features/email-message/core/email-message';
+import { getEmailCapabilities } from '@core/email-link/capabilities';
+import { useEmailLinksQuery } from '@queries/email/link';
+import { queryReadyGate } from '@queries/gate';
 import { Layer } from '@ui';
 import {
   type Accessor,
@@ -38,6 +41,24 @@ export function ThreadReplyInput(props: ThreadReplyInputProps) {
 function ThreadReplyInputSession(props: ThreadReplyInputProps) {
   const ctx = useEmailThreadState();
   const viewContext = useEmailThreadViewContext();
+
+  // Frontend-side UX guess only (see getEmailCapabilities) — the backend is
+  // the final enforcer. A Microsoft thread's link carries a read-only Graph
+  // grant, so replying, drafting, and sending are hidden in favor of a
+  // notice rather than left to fail against the backend after the fact.
+  // Fails closed while the links list is pending/unknown (queryReadyGate,
+  // not a raw `.data` read — reading a pending query's data still suspends
+  // the nearest <Suspense>, see apps/web/AGENTS.md), so a Gmail composer
+  // that briefly can't resolve its link renders the read-only notice rather
+  // than a writable composer it isn't sure is safe to show.
+  const emailLinksQuery = useEmailLinksQuery();
+  const capabilities = createMemo(() => {
+    const linkId = ctx.thread()?.link_id;
+    const link = queryReadyGate(emailLinksQuery)
+      ? emailLinksQuery.data.links.find((l) => l.id === linkId)
+      : undefined;
+    return getEmailCapabilities(link);
+  });
 
   // The seed identity of this composer: which version of which draft it
   // mounts from. When the server sends a newer save of that draft (a thread
@@ -83,79 +104,102 @@ function ThreadReplyInputSession(props: ThreadReplyInputProps) {
   }
 
   return (
-    <Show when={ctx.drafts.initialDraftsSettled()}>
-      <Show when={seedKey()} keyed>
-        {(seed) => (
-          <Layer depth={props.mobileDrawer ? 0 : 2}>
-            <ReplyInputView
-              context={viewContext.compose}
-              host={viewContext.composeHost}
-              session={{
-                thread: ctx.thread,
-                recipientOptions: ctx.recipientOptions,
-                isPersonalReply: () => {
-                  const message = props.replyingTo();
-                  return (
-                    !!message &&
-                    isPersonalMessage(
-                      message,
-                      viewContext.thread.viewerEmail(),
-                      ctx.messages.personalSenders()
-                    )
-                  );
-                },
-                onDraftRemoved: () => {
-                  const id = props.replyingTo()?.db_id;
-                  if (id) ctx.drafts.deleteDraftForMessage(id);
-                },
-                replyRequest: {
-                  replyType: () =>
-                    ctx.replyRequest.messageId() === props.replyingTo()?.db_id
-                      ? ctx.replyRequest.replyType()
-                      : undefined,
-                  clear: ctx.replyRequest.clear,
-                },
-                exitToThread: (target) => {
-                  const id =
-                    target === 'last'
-                      ? ctx.messages.list().at(-1)?.db_id
-                      : ctx.messages.focusedId();
-                  if (!id) return false;
-                  ctx.messages.setFocused(id);
-                  const message = ctx
-                    .messagesContainerRef()
-                    ?.querySelector<HTMLElement>(
-                      `[data-message-body-id="${CSS.escape(id)}"]`
+    <Show
+      when={capabilities().canReply}
+      fallback={<ReadOnlyReplyNotice unframed={props.unframed} />}
+    >
+      <Show when={ctx.drafts.initialDraftsSettled()}>
+        <Show when={seedKey()} keyed>
+          {(seed) => (
+            <Layer depth={props.mobileDrawer ? 0 : 2}>
+              <ReplyInputView
+                context={viewContext.compose}
+                host={viewContext.composeHost}
+                session={{
+                  thread: ctx.thread,
+                  recipientOptions: ctx.recipientOptions,
+                  isPersonalReply: () => {
+                    const message = props.replyingTo();
+                    return (
+                      !!message &&
+                      isPersonalMessage(
+                        message,
+                        viewContext.thread.viewerEmail(),
+                        ctx.messages.personalSenders()
+                      )
                     );
-                  const card = message?.closest<HTMLElement>('[tabindex="0"]');
-                  card?.focus();
-                  return !!card;
-                },
-              }}
-              sourceEntityId={
-                ctx.thread()?.db_id ??
-                props.replyingTo()?.thread_db_id ??
-                props.draft?.thread_db_id ??
-                ''
-              }
-              replyingTo={props.replyingTo}
-              draft={props.draft}
-              preloadedHtml={draftHTML()}
-              formSeed={seed}
-              onEngaged={() => setEngaged(true)}
-              sideEffectOnSend={afterSend}
-              onMarkDone={ctx.archiveThread}
-              setShowReply={props.setShowReply}
-              markdownDomRef={props.markdownDomRef}
-              unframed={props.unframed}
-              mobileDrawer={props.mobileDrawer}
-              isEditingExisting={
-                props.replyingTo() == null && props.draft != null
-              }
-            />
-          </Layer>
-        )}
+                  },
+                  onDraftRemoved: () => {
+                    const id = props.replyingTo()?.db_id;
+                    if (id) ctx.drafts.deleteDraftForMessage(id);
+                  },
+                  replyRequest: {
+                    replyType: () =>
+                      ctx.replyRequest.messageId() === props.replyingTo()?.db_id
+                        ? ctx.replyRequest.replyType()
+                        : undefined,
+                    clear: ctx.replyRequest.clear,
+                  },
+                  exitToThread: (target) => {
+                    const id =
+                      target === 'last'
+                        ? ctx.messages.list().at(-1)?.db_id
+                        : ctx.messages.focusedId();
+                    if (!id) return false;
+                    ctx.messages.setFocused(id);
+                    const message = ctx
+                      .messagesContainerRef()
+                      ?.querySelector<HTMLElement>(
+                        `[data-message-body-id="${CSS.escape(id)}"]`
+                      );
+                    const card = message?.closest<HTMLElement>('[tabindex="0"]');
+                    card?.focus();
+                    return !!card;
+                  },
+                }}
+                sourceEntityId={
+                  ctx.thread()?.db_id ??
+                  props.replyingTo()?.thread_db_id ??
+                  props.draft?.thread_db_id ??
+                  ''
+                }
+                replyingTo={props.replyingTo}
+                draft={props.draft}
+                preloadedHtml={draftHTML()}
+                formSeed={seed}
+                onEngaged={() => setEngaged(true)}
+                sideEffectOnSend={afterSend}
+                onMarkDone={ctx.archiveThread}
+                setShowReply={props.setShowReply}
+                markdownDomRef={props.markdownDomRef}
+                unframed={props.unframed}
+                mobileDrawer={props.mobileDrawer}
+                isEditingExisting={
+                  props.replyingTo() == null && props.draft != null
+                }
+              />
+            </Layer>
+          )}
+        </Show>
       </Show>
     </Show>
+  );
+}
+
+/**
+ * Shown instead of the composer when the active thread's inbox link denies
+ * `canReply` (currently: any read-only — e.g. Microsoft — link; see
+ * getEmailCapabilities and the real `Link.is_read_only` field on the
+ * backend). Gmail threads always resolve `canReply: true`, so this never
+ * renders for them and their composer is unchanged.
+ */
+function ReadOnlyReplyNotice(props: { unframed?: boolean }) {
+  return (
+    <Layer depth={props.unframed ? 0 : 2}>
+      <div class="macro-message-width macro-message-padding w-full px-4 py-3 text-sm text-ink-muted">
+        This mailbox is read-only. Replying, drafting, and sending aren’t
+        available for Microsoft 365 inboxes yet.
+      </div>
+    </Layer>
   );
 }

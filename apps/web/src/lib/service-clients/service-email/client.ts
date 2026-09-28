@@ -356,6 +356,26 @@ export const emailClient = {
     ).map((result) => result);
   },
 
+  /**
+   * Real, already-implemented endpoint: `POST /email/links/microsoft/init`
+   * (`services/email_service/src/api/email/links/microsoft.rs`,
+   * `init_handler`). Creates or reactivates the caller's Microsoft link from
+   * auth-service's own verified grant status — it takes **no** request body;
+   * the backend doc comment is explicit that "no caller-supplied email,
+   * tenant, or object id is accepted as ownership proof." 409 CONFLICT when
+   * auth-service reports no active grant (call
+   * `authServiceClient.getMicrosoftMailboxStatus` first and only call this
+   * once `connected` is true — see `useAddMicrosoftMailboxFlow`).
+   */
+  async initMicrosoftLink() {
+    return (
+      await emailFetch<{ linkId: string; email: string; created: boolean }>(
+        '/email/links/microsoft/init',
+        { method: 'POST' }
+      )
+    ).map((result) => result);
+  },
+
   async listBackfillJobs() {
     return (
       await emailFetch<ListBackfillJobsResponse>('/email/backfill/gmail', {

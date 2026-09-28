@@ -10,9 +10,11 @@ import {
   ENABLE_INBOX_RESYNC,
   ENABLE_INBOX_SYNC_STATUS,
   enableEmailSignatures,
+  enableMicrosoft365Email,
   enableMultiInbox,
 } from '@core/constant/featureFlags';
 import { useEmail, useUserId } from '@core/context/user';
+import { isMicrosoftProvider } from '@core/email-link/capabilities';
 import {
   useAddInboxFlow,
   useEmailLinks,
@@ -42,7 +44,8 @@ import { Button, Dialog, Panel, Tooltip } from '@ui';
 import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
 import { match } from 'ts-pattern';
 import { ConnectAction, StatusDot } from './integration-ui';
-import { IntegrationRow, SettingsCard, SettingsRow } from './primitives';
+import { MicrosoftEmailCard } from './MicrosoftEmailCard';
+import { Chip, IntegrationRow, SettingsCard, SettingsRow } from './primitives';
 import {
   clearSignatureState,
   isSignatureExpanded,
@@ -60,6 +63,7 @@ export function EmailCard() {
   const email = useEmail();
   const userId = useUserId();
   const multiInboxFlag = useFeatureFlag(enableMultiInbox);
+  const microsoftFlag = useFeatureFlag(enableMicrosoft365Email);
 
   const { query: emailLinksQuery, resyncInbox } = useEmailLinks();
   const emailActive = useEmailLinksStatus();
@@ -106,7 +110,13 @@ export function EmailCard() {
   // The primary inbox is the user's own is_primary link; it sorts to the top
   // and is labelled. Everything else (other own inboxes + delegated/shared) follows.
   const inboxes = createMemo(() => {
-    const links = emailLinksQuery.data?.links ?? [];
+    // Gmail-only: Microsoft 365 links render in their own card
+    // (`MicrosoftEmailCard`) with read-only rows and no calendar/signature
+    // controls, so they must never appear in this list even if a future
+    // backend response mixes providers into one `links` array.
+    const links = (emailLinksQuery.data?.links ?? []).filter(
+      (link) => !isMicrosoftProvider(link.provider)
+    );
     const uid = userId();
     const primary = links.find(
       (link) => link.is_primary && link.macro_id === uid
@@ -259,6 +269,10 @@ export function EmailCard() {
         </Show>
       </SettingsCard>
 
+      <Show when={microsoftFlag().enabled}>
+        <MicrosoftEmailCard />
+      </Show>
+
       <TurnOffCalendarDialog
         target={turnOffCalendarTarget()}
         onClose={() => setTurnOffCalendarTarget(null)}
@@ -370,14 +384,6 @@ function BackfillProgressBar(props: { progress: BackfillProgress }) {
         />
       </div>
     </div>
-  );
-}
-
-function Chip(props: { label: string }) {
-  return (
-    <span class="shrink-0 rounded bg-edge-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-muted">
-      {props.label}
-    </span>
   );
 }
 

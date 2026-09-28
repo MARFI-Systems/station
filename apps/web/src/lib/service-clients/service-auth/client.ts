@@ -881,6 +881,74 @@ export const authServiceClient = {
   },
 
   /**
+   * Starts the delegated, read-only Microsoft 365 mailbox consent flow — NOT
+   * Microsoft identity/login. Real, already-implemented endpoint: see
+   * `services/authentication_service/src/api/microsoft_mailbox.rs` (`start`),
+   * mounted at `POST /microsoft-mailbox/connect` on auth-service, gated
+   * server-side on `ctx.microsoft_mailbox_oauth_enabled` (503 when off).
+   * Response casing is `camelCase` (`#[serde(rename_all = "camelCase")]`) —
+   * deliberately different from Gmail's `snake_case` `authorization_url`.
+   *
+   * Unlike `initGmailLink`, this takes no `originalUrl`/`scopes` params: the
+   * backend hardcodes its own `redirect_uri` to
+   * `{BASE_URL}/microsoft-mailbox/callback` (itself, not the frontend), and
+   * there is only one fixed read-only scope set to consent to. After
+   * Microsoft consent, the backend's own callback 303-redirects the browser
+   * to a fixed frontend completion URL
+   * (`/settings/connections?microsoftMailbox=connected|denied` — see
+   * `MicrosoftMailboxCompletionRoute` and
+   * docs/AGENT_GUIDE/email-microsoft365.md), which is where the actual
+   * mailbox provisioning (`emailClient.initMicrosoftLink`) is triggered from.
+   */
+  async initMicrosoftMailboxConnect() {
+    return (
+      await fetchWithAuth<{ authorizationUrl: string }>(
+        `${authHost}/microsoft-mailbox/connect`,
+        { method: 'POST' }
+      )
+    ).map((result) => result);
+  },
+
+  /**
+   * Real, already-implemented endpoint: `GET /microsoft-mailbox` (`fn
+   * status` in `microsoft_mailbox.rs`). Reports whether the caller has an
+   * active Microsoft mailbox grant, from the backend's own verified record —
+   * never from anything the caller supplied. `email`/`tenantId`/`objectId`
+   * are present only when `connected` is true. No refresh/access tokens are
+   * ever included in this response.
+   */
+  async getMicrosoftMailboxStatus() {
+    return (
+      await fetchWithAuth<{
+        connected: boolean;
+        email: string | null;
+        tenantId: string | null;
+        objectId: string | null;
+      }>(`${authHost}/microsoft-mailbox`, { method: 'GET' })
+    ).map((result) => result);
+  },
+
+  /**
+   * Real, already-implemented endpoint: `DELETE /microsoft-mailbox` (`fn
+   * disconnect`). Revokes the caller's Microsoft mailbox grant at auth-
+   * service. Note: the normal disconnect path is
+   * `useRemoveInboxMutation`/`emailClient.deleteLink`, whose backend cascade
+   * (`services/email_service/src/pubsub/link_manager/process.rs`, the
+   * `UserProvider::Microsoft` arm) already calls this same revoke internally
+   * before tearing down the link — so this method exists only for the
+   * pre-link edge case (an auth grant exists but `POST
+   * /email/links/microsoft/init` never ran or failed), not as a second
+   * normal disconnect action alongside the link delete.
+   */
+  async disconnectMicrosoftMailbox() {
+    return (
+      await fetchWithAuth<EmptyResponse>(`${authHost}/microsoft-mailbox`, {
+        method: 'DELETE',
+      })
+    ).map(() => undefined);
+  },
+
+  /**
    * Deletes a github link for a user
    * NOTE: this does not delete the github application from being installed on a teams repository
    */

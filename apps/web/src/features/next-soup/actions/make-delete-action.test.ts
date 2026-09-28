@@ -11,6 +11,14 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
   restoreFocus: vi.fn(),
   trashEmails: vi.fn(),
+  isEmailEntityWritable: vi.fn(() => true),
+}));
+
+// Capability resolution has its own dedicated tests
+// (core/email-link/entity-capability.test.ts); default to writable so every
+// existing case below keeps testing this action's own logic.
+vi.mock('@core/email-link/entity-capability', () => ({
+  isEmailEntityWritable: mocks.isEmailEntityWritable,
 }));
 
 // The action pulls in the bulk-edit modal, split manager and toast at module
@@ -72,6 +80,7 @@ const { canExecute, execute } = makeDeleteAction({ userId: () => ME });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.splitManager = undefined;
+  mocks.isEmailEntityWritable.mockReturnValue(true);
 });
 
 describe('makeDeleteAction.execute', () => {
@@ -135,6 +144,27 @@ describe('makeDeleteAction.execute', () => {
     expect(mocks.openBulkEditModal).toHaveBeenCalledWith(
       expect.objectContaining({ entities: [doc] })
     );
+  });
+
+  it('closes the non-soup delete gap: never hands a read-only email to openBulkEditModal even when the caller invokes execute() directly with a mixed selection', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    const doc = entity('document', { id: 'doc-1' });
+    const readOnlyEmail = entity('email', { id: 'ms-thread' });
+
+    await execute([doc, readOnlyEmail]);
+
+    expect(mocks.openBulkEditModal).toHaveBeenCalledWith(
+      expect.objectContaining({ entities: [doc] })
+    );
+  });
+
+  it('does not even open the confirm modal when the only non-reminder entities are read-only email', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    const readOnlyEmail = entity('email', { id: 'ms-thread' });
+
+    await execute([readOnlyEmail]);
+
+    expect(mocks.openBulkEditModal).not.toHaveBeenCalled();
   });
 });
 
@@ -490,5 +520,10 @@ describe('makeDeleteAction.canExecute', () => {
   // delete.
   it('allows deleting a reminder despite it carrying no owner id', () => {
     expect(canExecute(entity('reminder', { ownerId: '' }))).toBe(true);
+  });
+
+  it('refuses to delete a read-only email, the same choke point keyboard, context menu, and bulk multi-select all share', () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    expect(canExecute(entity('email', { id: 'ms-thread' }))).toBe(false);
   });
 });

@@ -23,6 +23,7 @@ export {
 } from './github-link';
 export { useInitGmailLink } from './gmail-link';
 export { authKeys } from './keys';
+export { useInitMicrosoftMailboxConnect } from './microsoft-mailbox-connect';
 export { useSendMobileWelcomeEmail } from './mobile-welcome-email';
 export {} from './mutations';
 export {

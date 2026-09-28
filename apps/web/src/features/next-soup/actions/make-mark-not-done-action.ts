@@ -4,6 +4,7 @@ import {
   resolveMarkEntitiesDoneVariables,
 } from '@app/features/next-soup/utils';
 import { toast } from '@core/component/Toast/Toast';
+import { isEmailEntityWritable } from '@core/email-link/entity-capability';
 import type { EntityData } from '@entity';
 import type { NotificationSource } from '@notifications';
 import { threadCanBeMarkedNotDone } from '@queries/email/thread';
@@ -58,8 +59,13 @@ export const makeMarkNotDoneAction = (options: MakeMarkNotDoneOptions) => {
   const isCompletedReminder = (entity: EntityData): boolean =>
     entity.type === 'reminder' && entity.completedAt != null;
 
+  // Read-only (currently: Microsoft) email links can't be unarchived either
+  // — same frontend UX guard as mark-done, shared across keyboard, context
+  // menu, and bulk multi-select through this one factory.
   const canExecute = (entity: EntityData): boolean =>
-    (entity.type === 'email' && entity.done === true) ||
+    (entity.type === 'email' &&
+      entity.done === true &&
+      isEmailEntityWritable(entity)) ||
     isCompletedReminder(entity);
 
   const execute = async (entities: EntityData[]) => {
@@ -67,7 +73,7 @@ export const makeMarkNotDoneAction = (options: MakeMarkNotDoneOptions) => {
     if (reminders.length > 0) await uncompleteReminders(reminders);
 
     const candidates = entities.filter(
-      (e) => e.type === 'email' && e.done === true
+      (e) => e.type === 'email' && e.done === true && isEmailEntityWritable(e)
     );
     if (candidates.length === 0) return;
 

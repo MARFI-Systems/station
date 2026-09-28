@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   })),
   toNotificationEntityRef: vi.fn(),
   undoableOptionsFactory: vi.fn(),
+  isEmailEntityWritable: vi.fn(() => true),
 }));
 
 vi.mock('@components/app/split-layout/layoutUtils', () => ({
@@ -64,6 +65,14 @@ vi.mock('@app/features/next-soup/utils', () => ({
   openEntityInSplitFromUnifiedList: mocks.openEntityInSplitFromUnifiedList,
   resolveMarkEntitiesDoneVariables: mocks.resolveMarkEntitiesDoneVariables,
   restoreSoupFocus: vi.fn(),
+}));
+
+// Capability resolution has its own dedicated tests
+// (core/email-link/entity-capability.test.ts); default to writable here so
+// every existing case below keeps testing this action's own logic, and
+// override per-test to prove the read-only gate itself.
+vi.mock('@core/email-link/entity-capability', () => ({
+  isEmailEntityWritable: mocks.isEmailEntityWritable,
 }));
 
 import {
@@ -153,6 +162,21 @@ describe('makeMarkDoneAction', () => {
       reminderIds: [],
     });
     mocks.toNotificationEntityRef.mockReset();
+    mocks.isEmailEntityWritable.mockReset();
+    mocks.isEmailEntityWritable.mockReturnValue(true);
+  });
+
+  it('denies mark done on a read-only email entity, the same choke point keyboard, context menu, and bulk multi-select all share', async () => {
+    mocks.isEmailEntityWritable.mockReturnValue(false);
+    const readOnlyEmail = { type: 'email', id: 'ms-thread', done: false } as EntityData;
+    const { action, dispose } = createAction();
+
+    expect(action.canExecute(readOnlyEmail)).toBe(false);
+
+    await action.execute([readOnlyEmail]);
+    expect(mocks.mutateAsync).not.toHaveBeenCalled();
+
+    dispose();
   });
 
   it('allows mark done on agent-session rows', () => {

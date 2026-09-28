@@ -13,6 +13,7 @@ import {
   enableGraphqlSoup,
   isFeatureEnabled,
 } from '@core/constant/featureFlags';
+import { isEmailEntityWritable } from '@core/email-link/entity-capability';
 import type { HotkeyGroup } from '@core/hotkey/types';
 import type { EntityData } from '@entity';
 import type { NotificationSource } from '@notifications';
@@ -56,9 +57,13 @@ export const canExecuteMarkDoneOnView = (view: ListView, tabId: string) => {
 
 /** Already-done emails are skipped by mark-done (they appear alongside
  *  not-done rows in views that show done content, e.g. mail "All"). done
- *  state is email-specific; other entity types are never filtered. */
+ *  state is email-specific; other entity types are never filtered. A
+ *  read-only (currently: Microsoft) email link is filtered out too, so a
+ *  mixed bulk selection archives only what it's allowed to — the same
+ *  frontend UX guard as the single-thread path (thread-action-adapter.tsx),
+ *  applied here so keyboard, context-menu, and bulk multi-select share it. */
 const isMarkDoneTarget = (e: EntityData) =>
-  !(e.type === 'email' && e.done === true);
+  !(e.type === 'email' && e.done === true) && isEmailEntityWritable(e);
 
 type MakeMarkDoneOptions = {
   userId?: () => string | undefined;
@@ -224,8 +229,10 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
     if (entity.type === 'channel_thread') {
       return scopeChannelNotificationsToEntity();
     }
+    if (entity.type === 'email') {
+      return isEmailEntityWritable(entity);
+    }
     if (
-      entity.type === 'email' ||
       entity.type === 'channel' ||
       entity.type === 'chat' ||
       // Agent-session rows exist in the inbox only through their settled /

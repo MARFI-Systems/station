@@ -1,4 +1,5 @@
 import { toast } from '@core/component/Toast/Toast';
+import { isEmailEntityWritable } from '@core/email-link/entity-capability';
 import type { EntityData } from '@entity';
 import { useNonPrimaryEmailLinkIdHeader } from '@queries/email/link';
 import {
@@ -15,8 +16,13 @@ import type { EntityActionListState } from './entity-action-context';
 export const makeMarkUnreadAction = () => {
   const markUnreadMutation = useMarkThreadAsUnreadMutation();
 
+  // Read-only (currently: Microsoft) links deny mark-unread too — the same
+  // frontend UX guard as every other mutating email action, shared across
+  // keyboard, context menu, and bulk multi-select through this factory.
   const canExecute = (entity: EntityData): boolean =>
-    entity.type === 'email' && entity.isRead === true;
+    entity.type === 'email' &&
+    entity.isRead === true &&
+    isEmailEntityWritable(entity);
 
   const execute = async (entities: EntityData[]) => {
     const targets = entities.filter(canExecute);
@@ -67,8 +73,13 @@ export const makeMarkReadAction = () => {
   const markSeenMutation = useMarkThreadAsSeenMutation();
   const toHeaderLinkId = useNonPrimaryEmailLinkIdHeader();
 
+  // This is the bulk/keyboard/context-menu equivalent of the implicit
+  // mark-read-on-open guard in EmailThreadLoadGate.tsx — an explicit
+  // "mark as read" bulk action must be blocked the same way.
   const canExecute = (entity: EntityData): boolean =>
-    entity.type === 'email' && entity.isRead === false;
+    entity.type === 'email' &&
+    entity.isRead === false &&
+    isEmailEntityWritable(entity);
 
   const execute = async (entities: EntityData[]) => {
     const targets = entities.filter(canExecute);

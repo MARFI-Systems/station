@@ -68,7 +68,7 @@ export function EmailThread(props: EmailThreadProps) {
     compose,
     composeHost: createEmailComposeHost(),
     rendering: {
-      openAttachment: createEmailAttachmentOpener(),
+      openAttachment: createEmailAttachmentOpener(source.thread),
       renderAvatar: (message: EmailMessage) => (
         <EmailSenderIcon message={message} />
       ),

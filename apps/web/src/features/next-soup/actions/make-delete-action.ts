@@ -3,6 +3,7 @@ import { BulkDeleteFailure } from '@app/features/entity/queries/bulk-delete-resu
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { globalRemoveFromSplitHistory } from '@components/app/split-layout/layoutUtils';
 import { toast } from '@core/component/Toast/Toast';
+import { isEmailEntityWritable } from '@core/email-link/entity-capability';
 import {
   createBulkDeleteDssItemsMutation,
   type EntityData,
@@ -99,7 +100,14 @@ export const makeDeleteAction = (options: MakeDeleteOptions) => {
       return false;
     }
     if (entity.type === 'email') {
-      return true;
+      // Read-only (currently: Microsoft) links can't be trashed either —
+      // same frontend UX guard shared across keyboard, context menu, and
+      // bulk multi-select. NOTE: only the soup-aware trash lane
+      // (`executeWithSoup`'s `emailEntities` filter below) is gated this way
+      // today; the non-soup `execute` path routes email through the generic
+      // `openBulkEditModal` confirm flow, which this slice did not gate —
+      // see docs/AGENT_GUIDE/email-microsoft365.md.
+      return isEmailEntityWritable(entity);
     }
     if (entity.type === 'channel') {
       return false;
@@ -115,7 +123,15 @@ export const makeDeleteAction = (options: MakeDeleteOptions) => {
 
   const execute = async (entities: EntityData[]) => {
     const reminders = entities.filter((e) => e.type === 'reminder');
-    const rest = entities.filter((e) => e.type !== 'reminder');
+    // Closes the gap `canExecute` alone doesn't cover: a caller that invokes
+    // `execute` directly with a mixed selection (rather than pre-filtering
+    // through `canExecute` per entity) must not hand a read-only email
+    // through to `openBulkEditModal`'s own delete mutation — same fail-closed
+    // guard as `executeWithSoup`'s trash lane below.
+    const rest = entities.filter(
+      (e) =>
+        e.type !== 'reminder' && (e.type !== 'email' || isEmailEntityWritable(e))
+    );
     void deleteRemindersNow(reminders);
     if (rest.length === 0) return;
 
@@ -171,7 +187,9 @@ export const makeDeleteAction = (options: MakeDeleteOptions) => {
 
     // Three lanes: emails trash immediately (with Undo), reminders delete
     // immediately (no Undo to give), everything else confirms first.
-    const emailEntities = entities.filter(isEmailEntity);
+    const emailEntities = entities
+      .filter(isEmailEntity)
+      .filter((entity) => isEmailEntityWritable(entity));
     const reminderEntities = entities.filter((e) => e.type === 'reminder');
     const nonEmailEntities = entities.filter(
       (e) => e.type !== 'email' && e.type !== 'reminder'
