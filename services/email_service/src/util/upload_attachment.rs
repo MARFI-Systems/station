@@ -22,7 +22,9 @@ use uuid::Uuid;
 
 #[derive(Error, Debug)]
 pub enum UploadAttachmentError {
-    #[error("Microsoft attachment document/media upload is not supported by the Gmail attachment helper")]
+    #[error(
+        "Microsoft attachment document/media upload is not supported by the Gmail attachment helper"
+    )]
     ProviderReadOnly,
 
     #[error("Gmail API rate limit exceeded")]

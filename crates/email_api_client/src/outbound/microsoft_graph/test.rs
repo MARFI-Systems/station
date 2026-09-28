@@ -645,5 +645,11 @@ async fn missing_optional_system_folder_returns_none() {
         .expect(1)
         .mount(&server)
         .await;
-    assert!(client(&server).get_mail_folder(&token(), "archive").await.unwrap().is_none());
+    assert!(
+        client(&server)
+            .get_mail_folder(&token(), "archive")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

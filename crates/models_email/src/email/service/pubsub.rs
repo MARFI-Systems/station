@@ -105,7 +105,9 @@ pub enum LinkManagerMessage {
 #[serde(tag = "phase", rename_all = "snake_case")]
 pub enum MicrosoftSyncOperation {
     DiscoverFolders,
-    PurgeFolder { folder_id: String },
+    PurgeFolder {
+        folder_id: String,
+    },
     SyncFolder {
         folder_id: String,
         expected_generation: i64,

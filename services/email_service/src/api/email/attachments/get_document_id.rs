@@ -39,7 +39,9 @@ impl IntoResponse for GetAttachmentDocumentIdError {
         let status_code = match &self {
             GetAttachmentDocumentIdError::AttachmentNotFound => StatusCode::NOT_FOUND,
             GetAttachmentDocumentIdError::AccessDenied => StatusCode::FORBIDDEN,
-            GetAttachmentDocumentIdError::UploadError(UploadAttachmentError::ProviderReadOnly) => StatusCode::BAD_REQUEST,
+            GetAttachmentDocumentIdError::UploadError(UploadAttachmentError::ProviderReadOnly) => {
+                StatusCode::BAD_REQUEST
+            }
             GetAttachmentDocumentIdError::UploadError(UploadAttachmentError::RateLimited) => {
                 StatusCode::TOO_MANY_REQUESTS
             }

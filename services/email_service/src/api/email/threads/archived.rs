@@ -91,7 +91,8 @@ pub async fn archived_handler(
     .await?
     .ok_or(ArchiveThreadError::ThreadNotFound)?;
 
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| ArchiveThreadError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| ArchiveThreadError::ReadOnly)?;
 
     let thread =
         email_db_client::threads::get::get_thread_by_id_and_link_id(&ctx.db, thread_id, link.id)

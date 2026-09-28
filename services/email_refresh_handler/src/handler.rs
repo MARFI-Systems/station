@@ -6,7 +6,9 @@ use lambda_runtime::{
     tracing::{self},
 };
 use macro_env::Environment;
-use models_email::email::service::pubsub::{DeletionReason, LinkManagerMessage, MicrosoftSyncOperation};
+use models_email::email::service::pubsub::{
+    DeletionReason, LinkManagerMessage, MicrosoftSyncOperation,
+};
 use sqlx::types::uuid;
 use sqlx::{Pool, Postgres, Type};
 
@@ -256,7 +258,8 @@ async fn send_microsoft_sync_messages(ctx: &context::Context) -> Result<(), Erro
     if interval_hours <= 0 {
         return Ok(());
     }
-    let bucket = (chrono::Utc::now().timestamp().div_euclid(3600) % i64::from(interval_hours)) as i32;
+    let bucket =
+        (chrono::Utc::now().timestamp().div_euclid(3600) % i64::from(interval_hours)) as i32;
     let provider_filter = DbUserProvider::Microsoft;
     let link_ids = sqlx::query_scalar!(
         r#"SELECT id as "link_id" FROM email_links

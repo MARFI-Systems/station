@@ -1,5 +1,5 @@
 import type { Link, ListLinksResponse } from '@service-email/generated/schemas';
-import { render } from '@solidjs/testing-library';
+import { render, waitFor } from '@solidjs/testing-library';
 import { QueryClient, QueryClientProvider } from '@tanstack/solid-query';
 import { ok } from 'neverthrow';
 import { createSignal, type JSX, onCleanup } from 'solid-js';
@@ -59,8 +59,15 @@ const linkFixtures = vi.hoisted(() => ({
 }));
 vi.mock('@service-email/client', () => ({
   emailClient: {
-    getLinks: async (): Promise<ReturnType<typeof ok<ListLinksResponse>>> => {
-      const body = linkFixtures.getLinksOverride
+    // No explicit return-type annotation: `typeof ok<ListLinksResponse>` is
+    // an instantiation expression, and TS resolves it against neverthrow's
+    // no-arg `ok(): Ok<void, never>` overload instead of the generic one
+    // (TS2344/TS2322 in tsc's typecheck step, not caught by vitest's
+    // runtime-only transform). Annotating `body` instead lets `ok(body)`
+    // infer `Ok<ListLinksResponse, never>` from a normal call expression,
+    // which resolves the overload correctly.
+    getLinks: async () => {
+      const body: ListLinksResponse = linkFixtures.getLinksOverride
         ? await linkFixtures.getLinksOverride()
         : { links: linkFixtures.links };
       return ok(body);
@@ -115,7 +122,7 @@ function ThreadTestProvider(props: {
   );
 }
 
-it('preserves an engaged composer through a same-message update but resets it for a different reply target', () => {
+it('preserves an engaged composer through a same-message update but resets it for a different reply target', async () => {
   linkFixtures.links = [inboxLink()];
   const first = message('first');
   const second = message('second');
@@ -126,7 +133,11 @@ it('preserves an engaged composer through a same-message update but resets it fo
     </ThreadTestProvider>
   ));
   try {
-    view.getByText('first').click();
+    // The composer's read-only gate resolves `useEmailLinksQuery`
+    // asynchronously (fails closed while pending — see capabilities.ts), so
+    // even a mocked, immediately-resolving fetch needs a tick before the
+    // composer (rather than the read-only notice) mounts.
+    (await view.findByText('first')).click();
     setTarget({ ...first, updated_at: '2026-09-05T00:00:00Z' });
     expect(lifecycle.mounted).toEqual(['first']);
     setTarget(second);
@@ -137,7 +148,7 @@ it('preserves an engaged composer through a same-message update but resets it fo
   }
 });
 
-it('returns focus to the owning thread when split panes contain the same message', () => {
+it('returns focus to the owning thread when split panes contain the same message', async () => {
   linkFixtures.links = [inboxLink()];
   vi.stubGlobal('CSS', { escape: (value: string) => value });
   const parent = message('shared-message');
@@ -160,6 +171,12 @@ it('returns focus to the owning thread when split panes contain the same message
     </>
   ));
   try {
+    // Both panes mount their own QueryClient/query; wait for both composers
+    // (not just the first match) to resolve past the read-only gate before
+    // interacting — see the note in the previous test.
+    await waitFor(() =>
+      expect(view.getAllByText('Exit reply')).toHaveLength(2)
+    );
     view.getAllByText('Exit reply')[1].click();
     expect(document.activeElement).toBe(view.getAllByTestId('card')[1]);
     view.getAllByText('Exit reply')[0].click();

@@ -91,11 +91,15 @@ pub async fn process_message(
                 tracing::warn!(link_id=%link.id, "Microsoft health check was routed to the Gmail link manager; skipping");
             }
         }
-        LinkManagerMessage::MicrosoftSync { link_id, sync_operation } => {
+        LinkManagerMessage::MicrosoftSync {
+            link_id,
+            sync_operation,
+        } => {
             let link = get_link_or_skip(&ctx, message, link_id).await?;
             let Some(link) = link else { return Ok(()) };
             #[cfg(feature = "microsoft_graph_readonly")]
-            crate::pubsub::link_manager::microsoft_sync::process(&ctx, &link, sync_operation).await?;
+            crate::pubsub::link_manager::microsoft_sync::process(&ctx, &link, sync_operation)
+                .await?;
             #[cfg(not(feature = "microsoft_graph_readonly"))]
             {
                 let _ = sync_operation;
@@ -353,13 +357,26 @@ async fn handle_delete(
         UserProvider::Microsoft => {
             // Authentication service owns the grant. Remove it before deleting the local link;
             // this is a local revoke only and performs no remote Graph write.
-            match ctx.auth_service_client.disconnect_microsoft_mailbox(&link.fusionauth_user_id).await {
-                Ok(()) | Err(authentication_service_client::error::AuthServiceClientError::NotFound) => {}
-                Err(error) => return Err(anyhow::Error::new(error).context("Failed to revoke Microsoft mailbox grant")),
+            match ctx
+                .auth_service_client
+                .disconnect_microsoft_mailbox(&link.fusionauth_user_id)
+                .await
+            {
+                Ok(())
+                | Err(authentication_service_client::error::AuthServiceClientError::NotFound) => {}
+                Err(error) => {
+                    return Err(anyhow::Error::new(error)
+                        .context("Failed to revoke Microsoft mailbox grant"));
+                }
             }
-            let disconnected = email_db_client::microsoft_mailbox::disconnect_microsoft_mailbox_for_owner(
-                &ctx.db, &link.fusionauth_user_id, link.id,
-            ).await.context("Failed to disconnect Microsoft mailbox locally")?;
+            let disconnected =
+                email_db_client::microsoft_mailbox::disconnect_microsoft_mailbox_for_owner(
+                    &ctx.db,
+                    &link.fusionauth_user_id,
+                    link.id,
+                )
+                .await
+                .context("Failed to disconnect Microsoft mailbox locally")?;
             if !disconnected {
                 anyhow::bail!("Microsoft mailbox ownership changed during disconnect");
             }

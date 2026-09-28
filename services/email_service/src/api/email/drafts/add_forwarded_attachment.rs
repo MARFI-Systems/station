@@ -89,7 +89,8 @@ pub async fn handler(
     Path(PathParams { id: draft_id }): Path<PathParams>,
     Json(req): Json<AddForwardedAttachmentRequest>,
 ) -> Result<(StatusCode, Json<AddForwardedAttachmentResponse>), AddForwardedAttachmentError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| AddForwardedAttachmentError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| AddForwardedAttachmentError::ReadOnly)?;
     // Ensure draft exists and belongs to this link
     if !email_db_client::messages::get::draft_exists_with_id(&ctx.db, link.id, draft_id).await? {
         return Err(AddForwardedAttachmentError::DraftNotFound);

@@ -86,7 +86,8 @@ pub async fn handler(
     State(ctx): State<ApiContext>,
     link: Extension<Link>,
 ) -> Result<Json<ListBlockedResponse>, ListBlockedError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| ListBlockedError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| ListBlockedError::ReadOnly)?;
     let blocked_emails = ctx.email_api.list_blocked_senders(link.id).await?;
 
     Ok(Json(ListBlockedResponse { blocked_emails }))

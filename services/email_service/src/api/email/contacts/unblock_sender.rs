@@ -27,7 +27,9 @@ pub enum UnblockSenderError {
 impl IntoResponse for UnblockSenderError {
     fn into_response(self) -> Response {
         let status_code = match &self {
-            UnblockSenderError::Validation(_) | UnblockSenderError::ReadOnly => StatusCode::BAD_REQUEST,
+            UnblockSenderError::Validation(_) | UnblockSenderError::ReadOnly => {
+                StatusCode::BAD_REQUEST
+            }
             UnblockSenderError::EnqueueFailed | UnblockSenderError::InternalError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -71,7 +73,8 @@ pub async fn handler(
     link: Extension<Link>,
     Json(req): Json<UnblockSenderRequest>,
 ) -> Result<StatusCode, UnblockSenderError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| UnblockSenderError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| UnblockSenderError::ReadOnly)?;
     validate_email(&req.email_address)?;
 
     ctx.sqs_client

@@ -74,7 +74,8 @@ pub async fn handler(
         attachment_id,
     }): Path<PathParams>,
 ) -> Result<impl IntoResponse, RemoveForwardedAttachmentError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| RemoveForwardedAttachmentError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| RemoveForwardedAttachmentError::ReadOnly)?;
     // Ensure draft exists
     if !email_db_client::messages::get::draft_exists_with_id(&ctx.db, link.id, draft_id).await? {
         return Err(RemoveForwardedAttachmentError::DraftNotFound);

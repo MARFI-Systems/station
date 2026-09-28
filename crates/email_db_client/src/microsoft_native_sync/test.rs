@@ -57,7 +57,11 @@ fn folder(link_id: Uuid, folder_id: &str) -> DiscoveredMicrosoftFolder {
     }
 }
 
-async fn insert_folder(pool: &Pool<Postgres>, link_id: Uuid, folder_id: &str) -> anyhow::Result<()> {
+async fn insert_folder(
+    pool: &Pool<Postgres>,
+    link_id: Uuid,
+    folder_id: &str,
+) -> anyhow::Result<()> {
     crate::microsoft_folder_sync::upsert_microsoft_folder_for_owner(
         pool,
         OWNER_A,
@@ -142,9 +146,16 @@ fn projected_message(link_id: Uuid, provider_message_id: &str) -> Message {
     }
 }
 
-async fn projection_count(pool: &Pool<Postgres>, table: &str, link_id: Uuid) -> anyhow::Result<i64> {
+async fn projection_count(
+    pool: &Pool<Postgres>,
+    table: &str,
+    link_id: Uuid,
+) -> anyhow::Result<i64> {
     let sql = format!("SELECT count(*) FROM {table} WHERE link_id = $1");
-    Ok(sqlx::query_scalar(&sql).bind(link_id).fetch_one(pool).await?)
+    Ok(sqlx::query_scalar(&sql)
+        .bind(link_id)
+        .fetch_one(pool)
+        .await?)
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -161,7 +172,10 @@ async fn native_projection_round_trip_is_idempotent(pool: Pool<Postgres>) -> any
 
     assert_eq!(projection_count(&pool, "email_threads", link_id).await?, 1);
     assert_eq!(projection_count(&pool, "email_messages", link_id).await?, 1);
-    assert_eq!(projection_count(&pool, "email_microsoft_message_state", link_id).await?, 1);
+    assert_eq!(
+        projection_count(&pool, "email_microsoft_message_state", link_id).await?,
+        1
+    );
     let attachment_count: i64 = sqlx::query_scalar(
         r#"SELECT count(*) FROM email_attachments a
            JOIN email_messages m ON m.id = a.message_id WHERE m.link_id = $1"#,
@@ -200,14 +214,16 @@ async fn destination_upsert_wins_over_source_tombstone(pool: Pool<Postgres>) -> 
     let mut destination = projected_message(link_id, "message-move");
     assert!(upsert_projected_message_for_owner(&pool, OWNER_A, FOLDER_B, &mut destination).await?);
 
-    assert!(!remove_projected_message_from_folder_for_owner(
-        &pool,
-        OWNER_A,
-        link_id,
-        FOLDER_A,
-        "message-move",
-    )
-    .await?);
+    assert!(
+        !remove_projected_message_from_folder_for_owner(
+            &pool,
+            OWNER_A,
+            link_id,
+            FOLDER_A,
+            "message-move",
+        )
+        .await?
+    );
     let state_folder: String = sqlx::query_scalar(
         "SELECT folder_id FROM email_microsoft_message_state WHERE link_id = $1 AND provider_message_id = $2",
     )
@@ -248,7 +264,10 @@ async fn completed_discovery_tombstones_only_unseen_folders(
     .await?;
     assert_eq!(
         rows,
-        vec![(FOLDER_A.to_owned(), false, 0), (FOLDER_B.to_owned(), true, 1)]
+        vec![
+            (FOLDER_A.to_owned(), false, 0),
+            (FOLDER_B.to_owned(), true, 1)
+        ]
     );
     let walk: (i64, Option<serde_json::Value>, Vec<String>) = sqlx::query_as(
         r#"SELECT folder_walk_generation, folder_walk_cursor, folder_walk_seen_ids
@@ -272,21 +291,19 @@ async fn owner_boundary_blocks_projection_mutations(pool: Pool<Postgres>) -> any
     assert!(upsert_projected_message_for_owner(&pool, OWNER_A, FOLDER_A, &mut owned).await?);
 
     let mut cross_owner = projected_message(link_id, "message-cross-owner");
-    assert!(!upsert_projected_message_for_owner(
-        &pool,
-        OWNER_B,
-        FOLDER_A,
-        &mut cross_owner,
-    )
-    .await?);
-    assert!(!remove_projected_message_from_folder_for_owner(
-        &pool,
-        OWNER_B,
-        link_id,
-        FOLDER_A,
-        "message-owner",
-    )
-    .await?);
+    assert!(
+        !upsert_projected_message_for_owner(&pool, OWNER_B, FOLDER_A, &mut cross_owner,).await?
+    );
+    assert!(
+        !remove_projected_message_from_folder_for_owner(
+            &pool,
+            OWNER_B,
+            link_id,
+            FOLDER_A,
+            "message-owner",
+        )
+        .await?
+    );
     assert_eq!(
         clear_projected_folder_for_owner(&pool, OWNER_B, link_id, FOLDER_A).await?,
         (0, false)
@@ -300,17 +317,15 @@ async fn rebuild_clear_is_bounded_and_eventually_empty(pool: Pool<Postgres>) -> 
     let link_id = provision(&pool).await?;
     insert_folder(&pool, link_id, FOLDER_A).await?;
     let thread_id = macro_uuid::generate_uuid_v7();
-    sqlx::query(
-        "INSERT INTO email_threads (id, provider_id, link_id) VALUES ($1, $2, $3)",
-    )
-    .bind(thread_id)
-    .bind("bulk-thread")
-    .bind(link_id)
-    .execute(&pool)
-    .await?;
+    sqlx::query("INSERT INTO email_threads (id, provider_id, link_id) VALUES ($1, $2, $3)")
+        .bind(thread_id)
+        .bind("bulk-thread")
+        .bind(link_id)
+        .execute(&pool)
+        .await?;
 
     let message_ids: Vec<Uuid> = (0..501).map(|_| macro_uuid::generate_uuid_v7()).collect();
-    let provider_ids: Vec<String> = (0..501).map(|i| format!("bulk-message-{i}")) .collect();
+    let provider_ids: Vec<String> = (0..501).map(|i| format!("bulk-message-{i}")).collect();
     sqlx::query(
         r#"INSERT INTO email_messages
            (id, provider_id, thread_id, provider_thread_id, link_id, subject)
@@ -346,7 +361,10 @@ async fn rebuild_clear_is_bounded_and_eventually_empty(pool: Pool<Postgres>) -> 
     );
     assert_eq!(projection_count(&pool, "email_messages", link_id).await?, 0);
     assert_eq!(projection_count(&pool, "email_threads", link_id).await?, 0);
-    assert_eq!(projection_count(&pool, "email_microsoft_message_state", link_id).await?, 0);
+    assert_eq!(
+        projection_count(&pool, "email_microsoft_message_state", link_id).await?,
+        0
+    );
     Ok(())
 }
 
@@ -357,14 +375,16 @@ async fn assert_mailbox_rejects_mutation(
 ) -> anyhow::Result<()> {
     let mut message = projected_message(link_id, "blocked-upsert");
     assert!(!upsert_projected_message_for_owner(pool, OWNER_A, FOLDER_A, &mut message).await?);
-    assert!(!remove_projected_message_from_folder_for_owner(
-        pool,
-        OWNER_A,
-        link_id,
-        FOLDER_A,
-        provider_message_id,
-    )
-    .await?);
+    assert!(
+        !remove_projected_message_from_folder_for_owner(
+            pool,
+            OWNER_A,
+            link_id,
+            FOLDER_A,
+            provider_message_id,
+        )
+        .await?
+    );
     assert_eq!(
         clear_projected_folder_for_owner(pool, OWNER_A, link_id, FOLDER_A).await?,
         (0, false)
@@ -393,33 +413,28 @@ async fn assert_mailbox_rejects_mutation(
     );
     assert!(
         crate::microsoft_folder_sync::invalidate_microsoft_folder_cursor_for_owner(
-            pool,
-            OWNER_A,
-            link_id,
-            FOLDER_A,
-            0,
+            pool, OWNER_A, link_id, FOLDER_A, 0,
         )
         .await?
         .is_none()
     );
     assert!(
         !crate::microsoft_folder_sync::mark_microsoft_folder_deleted_for_owner(
-            pool,
-            OWNER_A,
-            link_id,
-            FOLDER_A,
+            pool, OWNER_A, link_id, FOLDER_A,
         )
         .await?
     );
-    assert!(!commit_folder_walk_step_for_owner(
-        pool,
-        OWNER_A,
-        link_id,
-        0,
-        Some(serde_json::json!({"cursor": "next"})),
-        &[FOLDER_A.to_owned()],
-    )
-    .await?);
+    assert!(
+        !commit_folder_walk_step_for_owner(
+            pool,
+            OWNER_A,
+            link_id,
+            0,
+            Some(serde_json::json!({"cursor": "next"})),
+            &[FOLDER_A.to_owned()],
+        )
+        .await?
+    );
     Ok(())
 }
 

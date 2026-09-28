@@ -1,7 +1,6 @@
 use models_email::email::service::{message::Message, microsoft::MicrosoftFolderSync};
 use serde_json::Value;
-use sqlx::{PgPool, Row};
-use uuid::Uuid;
+use sqlx::{PgPool, Row, types::Uuid};
 
 #[cfg(test)]
 mod test;
@@ -46,12 +45,8 @@ pub async fn commit_folder_walk_step_for_owner(
     discovered_ids: &[String],
 ) -> anyhow::Result<bool> {
     let mut tx = pool.begin().await?;
-    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(
-        &mut tx,
-        owner,
-        link_id,
-    )
-    .await?
+    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(&mut tx, owner, link_id)
+        .await?
     {
         tx.rollback().await?;
         return Ok(false);
@@ -118,8 +113,11 @@ pub async fn fetch_folder_for_owner(
     link_id: Uuid,
     folder_id: &str,
 ) -> anyhow::Result<Option<MicrosoftFolderSync>> {
-    let rows = crate::microsoft_folder_sync::list_microsoft_folders_for_owner(pool, owner, link_id).await?;
-    Ok(rows.into_iter().find(|folder| folder.folder_id == folder_id))
+    let rows = crate::microsoft_folder_sync::list_microsoft_folders_for_owner(pool, owner, link_id)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .find(|folder| folder.folder_id == folder_id))
 }
 
 /// Projects a provider message using the existing native email thread/message/contact/attachment
@@ -172,12 +170,8 @@ pub async fn upsert_projected_message_for_owner(
         updated_at: Default::default(),
         messages: vec![],
     };
-    let thread_id = crate::threads::insert::insert_thread(
-        &mut guard_tx,
-        &thread,
-        message.link_id,
-    )
-    .await?;
+    let thread_id =
+        crate::threads::insert::insert_thread(&mut guard_tx, &thread, message.link_id).await?;
     message.thread_db_id = thread_id;
     crate::messages::insert::insert_message_with_tx(
         &mut guard_tx,
@@ -188,13 +182,12 @@ pub async fn upsert_projected_message_for_owner(
         true,
     )
     .await?;
-    let message_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM email_messages WHERE link_id = $1 AND provider_id = $2",
-    )
-    .bind(message.link_id)
-    .bind(&provider_message_id)
-    .fetch_one(&mut *guard_tx)
-    .await?;
+    let message_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM email_messages WHERE link_id = $1 AND provider_id = $2")
+            .bind(message.link_id)
+            .bind(&provider_message_id)
+            .fetch_one(&mut *guard_tx)
+            .await?;
     sqlx::query(
         r#"INSERT INTO email_microsoft_message_state
            (link_id, provider_message_id, message_id, folder_id, change_key, provider_thread_id)
@@ -226,12 +219,8 @@ pub async fn remove_projected_message_from_folder_for_owner(
     provider_message_id: &str,
 ) -> anyhow::Result<bool> {
     let mut tx = pool.begin().await?;
-    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(
-        &mut tx,
-        owner,
-        link_id,
-    )
-    .await?
+    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(&mut tx, owner, link_id)
+        .await?
     {
         tx.rollback().await?;
         return Ok(false);
@@ -262,10 +251,11 @@ pub async fn remove_projected_message_from_folder_for_owner(
         .bind(link_id)
         .execute(&mut *tx)
         .await?;
-    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM email_messages WHERE thread_id = $1")
-        .bind(thread_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM email_messages WHERE thread_id = $1")
+            .bind(thread_id)
+            .fetch_one(&mut *tx)
+            .await?;
     if remaining == 0 {
         sqlx::query("DELETE FROM email_threads WHERE id = $1 AND link_id = $2")
             .bind(thread_id)
@@ -286,12 +276,8 @@ pub async fn clear_projected_folder_for_owner(
     folder_id: &str,
 ) -> anyhow::Result<(u64, bool)> {
     let mut tx = pool.begin().await?;
-    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(
-        &mut tx,
-        owner,
-        link_id,
-    )
-    .await?
+    if !crate::microsoft_mailbox::lock_active_microsoft_mailbox_for_owner(&mut tx, owner, link_id)
+        .await?
     {
         tx.rollback().await?;
         return Ok((0, false));

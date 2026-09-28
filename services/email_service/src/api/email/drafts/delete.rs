@@ -73,7 +73,8 @@ pub async fn handler(
     link: Extension<Link>,
     Path(draft_id): Path<Uuid>,
 ) -> Result<Response, DeleteDraftError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| DeleteDraftError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| DeleteDraftError::ReadOnly)?;
     let message_replying_to = email_db_client::messages::get_simple_messages::get_simple_message(
         &ctx.db,
         &draft_id,

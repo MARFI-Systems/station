@@ -208,7 +208,9 @@ impl MicrosoftGraphMailClient {
         let response = successful_response(response).await?;
         let folder: MicrosoftGraphMailFolder = decode_json_limited(response).await?;
         if folder.id.is_empty() {
-            return Err(invalid_response("folder response has no provider identifier"));
+            return Err(invalid_response(
+                "folder response has no provider identifier",
+            ));
         }
         Ok(Some(folder))
     }

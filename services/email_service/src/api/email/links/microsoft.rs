@@ -1,5 +1,10 @@
 use crate::api::context::{ApiContext, AuthorizationService};
-use axum::{Json, extract::State, http::StatusCode, response::{IntoResponse, Response}};
+use axum::{
+    Json,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use macro_user_id::{cowlike::CowLike, email::EmailStr};
 use model::response::ErrorResponse;
@@ -26,20 +31,36 @@ pub async fn init_handler(
     authorization: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
 ) -> Result<Json<MicrosoftMailboxInitResponse>, Response> {
     if !cfg!(feature = "microsoft_graph_readonly") {
-        return Err(error(StatusCode::SERVICE_UNAVAILABLE, "Microsoft mailbox sync is disabled"));
+        return Err(error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Microsoft mailbox sync is disabled",
+        ));
     }
     let user = &authorization.authorization.user;
     let owner = &user.user_context.fusion_user_id;
-    let status = ctx.auth_service_client.get_microsoft_mailbox_status(owner).await.map_err(|e| {
-        tracing::warn!(error=?e, "failed to load Microsoft mailbox status");
-        error(StatusCode::BAD_GATEWAY, "Microsoft mailbox status is unavailable")
-    })?;
+    let status = ctx
+        .auth_service_client
+        .get_microsoft_mailbox_status(owner)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error=?e, "failed to load Microsoft mailbox status");
+            error(
+                StatusCode::BAD_GATEWAY,
+                "Microsoft mailbox status is unavailable",
+            )
+        })?;
     let mailbox = status.mailbox.filter(|_| status.connected).ok_or_else(|| {
-        error(StatusCode::CONFLICT, "Microsoft mailbox authorization is not connected")
+        error(
+            StatusCode::CONFLICT,
+            "Microsoft mailbox authorization is not connected",
+        )
     })?;
     let normalized = mailbox.email.to_ascii_lowercase();
     let email = EmailStr::try_from(normalized.clone()).map_err(|_| {
-        error(StatusCode::BAD_GATEWAY, "Microsoft returned an invalid mailbox address")
+        error(
+            StatusCode::BAD_GATEWAY,
+            "Microsoft returned an invalid mailbox address",
+        )
     })?;
     let requested_id = macro_uuid::generate_uuid_v7();
     let macro_id = user.macro_user_id.clone().into_owned();
@@ -69,7 +90,10 @@ pub async fn init_handler(
     .await
     .map_err(|e| {
         tracing::warn!(error=?e, "failed to provision Microsoft mailbox");
-        error(StatusCode::INTERNAL_SERVER_ERROR, "Unable to provision Microsoft mailbox")
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to provision Microsoft mailbox",
+        )
     })?;
     ctx.sqs_client
         .enqueue_link_manager_notification(LinkManagerMessage::MicrosoftSync {
@@ -89,5 +113,11 @@ pub async fn init_handler(
 }
 
 fn error(status: StatusCode, message: &'static str) -> Response {
-    (status, Json(ErrorResponse { message: message.into() })).into_response()
+    (
+        status,
+        Json(ErrorResponse {
+            message: message.into(),
+        }),
+    )
+        .into_response()
 }

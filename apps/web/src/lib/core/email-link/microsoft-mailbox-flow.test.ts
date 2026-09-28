@@ -39,6 +39,9 @@ describe('useAddMicrosoftMailboxFlow', () => {
     );
     expect(mocks.toastFailure).not.toHaveBeenCalled();
 
+    // @ts-expect-error restoring the original Location object; the DOM lib's
+    // `location` setter only types a `string` parameter (navigation), not
+    // the `Location` object the getter returns.
     window.location = originalLocation;
   });
 

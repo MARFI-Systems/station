@@ -345,7 +345,10 @@ impl MicrosoftMailboxTokenSource {
 
         match token {
             Ok(token) => {
-                if !token.mailbox.email.eq_ignore_ascii_case(&mailbox.user_principal_name)
+                if !token
+                    .mailbox
+                    .email
+                    .eq_ignore_ascii_case(&mailbox.user_principal_name)
                     || token.mailbox.tenant_id != mailbox.tenant_id
                     || token.mailbox.object_id != mailbox.mailbox_id
                 {

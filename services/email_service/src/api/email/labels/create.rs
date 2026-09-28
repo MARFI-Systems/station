@@ -47,7 +47,13 @@ pub async fn handler(
     Json(request_body): Json<CreateLabelRequest>,
 ) -> Result<Response, Response> {
     crate::api::email::mutation_guard::ensure_writable(&link).map_err(|error| {
-        (StatusCode::BAD_REQUEST, Json(ErrorResponse { message: error.to_string().into() })).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                message: error.to_string().into(),
+            }),
+        )
+            .into_response()
     })?;
     let created_label = ctx
         .email_api

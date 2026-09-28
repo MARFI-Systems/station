@@ -61,7 +61,8 @@ pub async fn run_worker_with_cancellation(
 ) {
     let ctx = LinkManagerContext {
         #[cfg(feature = "microsoft_graph_readonly")]
-        microsoft_graph: email_api_client::outbound::microsoft_graph::MicrosoftGraphMailClient::default(),
+        microsoft_graph:
+            email_api_client::outbound::microsoft_graph::MicrosoftGraphMailClient::default(),
         db,
         sqs_worker: worker.clone(),
         email_api,

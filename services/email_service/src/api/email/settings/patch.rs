@@ -84,7 +84,8 @@ pub async fn patch_settings_handler(
     link: Extension<Link>,
     Json(api_settings): Json<PatchSettingsRequest>,
 ) -> Result<Json<PatchSettingsResponse>, PatchSettingsError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| PatchSettingsError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| PatchSettingsError::ReadOnly)?;
     // The signature is user-supplied HTML; sanitize at this trust boundary
     // before it is persisted (and later rendered into compose bodies).
     let mut settings = api_settings.settings;

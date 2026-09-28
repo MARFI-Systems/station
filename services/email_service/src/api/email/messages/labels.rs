@@ -91,7 +91,13 @@ pub async fn handler(
     })?;
 
     crate::api::email::mutation_guard::ensure_writable(&link).map_err(|error| {
-        (StatusCode::BAD_REQUEST, Json(ErrorResponse { message: error.to_string().into() })).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                message: error.to_string().into(),
+            }),
+        )
+            .into_response()
     })?;
 
     let label = email_db_client::labels::get::fetch_label_by_id(&ctx.db, body.label_id, link.id)
@@ -323,11 +329,10 @@ pub async fn handler(
         .into_response())
 }
 
-fn all_links_match(
-    expected_link_id: Uuid,
-    link_ids: impl IntoIterator<Item = Uuid>,
-) -> bool {
-    link_ids.into_iter().all(|link_id| link_id == expected_link_id)
+fn all_links_match(expected_link_id: Uuid, link_ids: impl IntoIterator<Item = Uuid>) -> bool {
+    link_ids
+        .into_iter()
+        .all(|link_id| link_id == expected_link_id)
 }
 
 #[cfg(test)]

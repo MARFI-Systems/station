@@ -71,7 +71,8 @@ pub async fn handler(
     link: Extension<Link>,
     Json(req): Json<BlockSenderRequest>,
 ) -> Result<StatusCode, BlockSenderError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| BlockSenderError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| BlockSenderError::ReadOnly)?;
     validate_email(&req.email_address)?;
 
     ctx.sqs_client

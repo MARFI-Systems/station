@@ -56,7 +56,8 @@ pub async fn disable_handler(
     authorization: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     link: Extension<Link>,
 ) -> Result<Response, DisableSyncError> {
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| DisableSyncError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| DisableSyncError::ReadOnly)?;
 
     tracing::info!(user_id = %authorization.authorization.user.user_context.user_id, "Disable called");
 

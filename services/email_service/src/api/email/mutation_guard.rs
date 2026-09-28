@@ -41,7 +41,9 @@ mod test {
     fn gmail_remains_writable_and_microsoft_is_denied() {
         assert!(ensure_writable(&link(UserProvider::Gmail)).is_ok());
         assert_eq!(
-            ensure_writable(&link(UserProvider::Microsoft)).unwrap_err().to_string(),
+            ensure_writable(&link(UserProvider::Microsoft))
+                .unwrap_err()
+                .to_string(),
             "Microsoft mailboxes are read-only"
         );
     }

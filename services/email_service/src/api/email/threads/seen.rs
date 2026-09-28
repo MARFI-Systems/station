@@ -89,7 +89,8 @@ pub async fn seen_handler(
     .context("Failed to resolve inbox for thread")?
     .ok_or(SeenThreadError::ThreadNotFound)?;
 
-    crate::api::email::mutation_guard::ensure_writable(&link).map_err(|_| SeenThreadError::ReadOnly)?;
+    crate::api::email::mutation_guard::ensure_writable(&link)
+        .map_err(|_| SeenThreadError::ReadOnly)?;
 
     // update viewed_at value in user_history table for thread
     email_db_client::user_history::upsert_user_history(&ctx.db, link.id, thread_id)

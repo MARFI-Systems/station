@@ -55,12 +55,8 @@ jobs:
           cargo metadata --format-version 1 > "$RUNNER_TEMP/station-m365-metadata.json"
           git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
 
-      - name: Format Rust and collect source patch
-        run: |
-          set -euo pipefail
-          cargo fmt --all
-          git diff --binary -- . ":!Cargo.lock" > "$RUNNER_TEMP/station-m365-format.diff"
-          git diff --name-only -z -- "*.rs" | tar --null -T - -czf "$RUNNER_TEMP/station-m365-formatted-source.tar.gz"
+      - name: Verify Rust formatting
+        run: cargo fmt --all -- --check
 
       - name: Create disposable runner-only test databases
         run: |
@@ -104,8 +100,6 @@ jobs:
             Cargo.lock
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
-            ${{ runner.temp }}/station-m365-format.diff
-            ${{ runner.temp }}/station-m365-formatted-source.tar.gz
           if-no-files-found: warn
           retention-days: 7
 

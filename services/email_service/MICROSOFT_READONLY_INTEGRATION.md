@@ -45,12 +45,15 @@ is authorized by this integration.
 
 The separate auth owner must provide an internal client that:
 
-1. Accepts the owner identity plus normalized mailbox identity or link ID.
+1. Accepts only the authenticated owner identity at the internal auth-client boundary.
+   The email service separately verifies the persisted active link and compares
+   the returned verified tenant/object identity before using the token.
 2. Returns a short-lived read-only `AccessToken` only for an active owner-scoped
    Microsoft link.
 3. Distinguishes missing/revoked grants from transient token refresh failures.
 4. Rotates encrypted refresh tokens without exposing them to email service logs.
-5. Revokes/removes the owner-scoped grant on disconnect before final link deletion.
+5. Disables the owner-scoped local grant and cancels pending consent flows on
+   disconnect before final link deletion. This is not remote Entra consent revocation.
 
 The email service must not read `microsoft_oauth_grants` directly or infer mailbox
 ownership from an existing Microsoft identity link.

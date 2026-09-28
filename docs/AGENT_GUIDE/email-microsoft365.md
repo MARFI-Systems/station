@@ -1,10 +1,9 @@
-# Microsoft 365 (Outlook) read-only mailbox — frontend slice
+# Microsoft 365 (Outlook) read-only mailbox
 
-Status: **frontend UI only, feature-flagged off by default**. This document
-is the contract reference for that slice — read it before touching any of
-the files it lists. Verified against branch `station/m365-readonly` at
-commit `41b6b179` ("Add Microsoft read-only mailbox persistence"); re-check
-against current source before relying on any endpoint shape here.
+Status: **integrated source on `station/m365-readonly`, disabled by default;
+not deployed or live-mailbox validated**. This document describes the frontend
+contract and gated rollout. Backend details are in
+`services/email_service/MICROSOFT_READONLY_INTEGRATION.md`.
 
 ## What this is
 
@@ -69,12 +68,13 @@ Same file, `fn status` / `fn disconnect`. Status:
 ```json
 { "connected": true, "email": "user@contoso.com", "tenantId": "...", "objectId": "..." }
 ```
-(all four fields `null`/absent when `connected: false`; no tokens ever
+(`connected` is false and the three identity fields are null when disconnected; no tokens ever
 included.) Bridge: `authServiceClient.getMicrosoftMailboxStatus`. Not
 currently called by this slice's UI — see "What calls what" below for why —
 kept available for a future direct status check.
 
-Disconnect revokes the grant. Bridge:
+Disconnect disables Station's local grant and cancels pending flows. It does
+not revoke tenant consent or call a Microsoft mutation API. Bridge:
 `authServiceClient.disconnectMicrosoftMailbox`. **Not** the normal disconnect
 path in this UI: `useRemoveInboxMutation` (`emailClient.deleteLink`) already
 triggers this same revoke server-side —
@@ -276,12 +276,12 @@ same `useEmailLinksQuery` cache every other gate uses, and:
   server-side (already backend-enforced) — no manual "add label" UI button
   was found to gate. If one exists under a name this search missed, it needs
   `getEmailCapabilities`/`isEmailEntityWritable` too.
-- **Shared-mailbox conflicts**: no detection exists for Microsoft at all
-  (unlike Gmail's `SHARED_INBOX_CONFLICT`/`forceShare`) —
-  `provision_microsoft_mailbox` has no owner-conflict concept in the source
-  read for this slice. Per this task's instruction, Gmail's
-  `ShareInboxConflictDialog`/`forceShare` is not reused for Microsoft; if
-  backend adds conflict detection, it needs its own resolution UI.
+- **Shared mailboxes / owner conflicts**: unsupported. The auth migration
+  enforces one active Station owner per verified Entra `(tenant_id, object_id)`
+  and one active mailbox grant per Station user. Conflicts fail closed; no
+  Gmail `forceShare` or automatic inbox-sharing path is offered. Raw Microsoft
+  attachment reads require access through the owning inbox, not merely a
+  shared-thread grant. Do not broaden this to work around a 404.
 - **`MicrosoftMailboxCompletionRoute`'s dependency on
   `microsoft_mailbox_completion_url`** being deployment-configured to this
   origin's `/settings/connections` — cannot be verified from frontend source
@@ -314,3 +314,85 @@ same `useEmailLinksQuery` cache every other gate uses, and:
 
 See the task's final report for the exact file list; kept out of this doc to
 avoid two sources of truth that can drift.
+
+## Gated rollout and rollback
+
+No deployment, migration execution, tenant registration, consent, or real mailbox
+import is authorized by the implementation task. Obtain explicit rollout approval
+before the following operational steps. Never put credentials in Git or notes.
+
+### Preflight
+
+1. Require green Monk CI for the exact release commit: strict Rust formatting,
+   Graph/Gmail regression tests, grant and native DB isolation tests, mutation
+   guards, feature-enabled service checks, focused UI tests, type-check and build.
+   Do not compile on the runtime VM. Verify the built artifact against the commit.
+2. Review the additive migrations, backups and restore procedure. Apply migrations
+   to an isolated approved environment before rollout. Relevant migrations are
+   `20260927205018_microsoft_mailbox_provider.sql`,
+   `20260927205035_microsoft_folder_sync.sql`,
+   `20260928140000_microsoft_mailbox_auth_hardening.sql`, and
+   `20260928153000_microsoft_native_sync.sql`. They depend on existing baseline
+   migrations, including the Microsoft OAuth grant table. Legacy grants remain
+   ineligible for mailbox access; they require fresh, explicit consent.
+3. Verify the configured Entra tenant and application. Delegated scopes are exactly
+   `openid email offline_access profile Mail.Read`; do not add send, write,
+   shared-mailbox, application-wide, or tenant-directory permissions. The OAuth
+   callback is the auth-service `BASE_URL` plus `/microsoft-mailbox/callback`.
+   Changing tenant registration or consent still needs explicit approval.
+4. Configure `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`,
+   `MICROSOFT_TENANT_ID`, and `MICROSOFT_TOKEN_KMS_KEY_ID` through the approved
+   secret/configuration system. Verify the auth service's KMS envelope-encryption
+   permissions. Do not print token responses, authorization codes, state, refresh
+   tokens, or delta URLs in operational logs.
+5. Set `MICROSOFT_MAILBOX_COMPLETION_URL` to the deployment's HTTPS
+   `/settings/connections` URL with no query/fragment. Keep
+   `MICROSOFT_MAILBOX_OAUTH_ENABLED` false until the pilot is approved.
+6. The email-service artifact must include `microsoft_graph_readonly`, which is
+   excluded from default Cargo features. The browser flag is
+   `enableMicrosoft365Email`, with local build override
+   `VITE_ENABLE_MICROSOFT365_EMAIL=true`. The browser flag alone is not security
+   authorization. Verify SQS link-manager consumers, attachment S3/CloudFront
+   configuration, and the scheduled email-refresh handler in the same environment.
+7. Confirm `INBOX_HEALTH_POLL_INTERVAL_HOURS` and the handler schedule. Sync uses
+   bounded polling, not Graph webhooks or instant delivery. Zero disables scheduled
+   health polling for both providers; do not change it as a Microsoft-only kill
+   switch. No latency SLA has been demonstrated by synthetic CI.
+
+### Approved live pilot checklist
+
+- Each participating Station user initiates their own Microsoft consent. Confirm
+  verified tenant/object identity, an additive read-only link, and unchanged Gmail
+  default/connection. A URL query flag is not evidence of a successful connection.
+- Confirm Inbox/Sent/custom folders, pagination, a provider move/deletion delta,
+  sanitized HTML and an attachment open without exposing a bearer token. Verify
+  polling progress and reauthorization after a revoked or expired grant.
+- Verify no mark-read occurs on open and all send/draft/label/move/delete controls
+  and direct backend mutation routes reject Microsoft. Cross-user guessed link,
+  thread and attachment IDs must not disclose another user's mailbox. Use only
+  separately authorized pilot participants and messages.
+- Test cancellation, replay rejection, callback versus disconnect, and disconnect
+  during queued sync. Confirm local teardown completes, not just that a delete
+  request was accepted. Outlook remains the source of truth and is not modified.
+- Visit the completion URL both with and without the result flag, plus ordinary
+  Settings and Gmail flows. Record actual observations and limitations separately
+  from unit-test claims.
+
+### Stop and rollback
+
+- Disable new consent and token issuance with
+  `MICROSOFT_MAILBOX_OAUTH_ENABLED=false` through the approved deployment process.
+  The owner-authenticated local status/disconnect APIs remain available without
+  OAuth enabled or KMS. Hiding the browser feature alone does not stop workers.
+- A flag change cannot recall already-issued tokens or in-flight GET requests.
+  Use the owner-scoped disconnect flow to deactivate the mailbox; native
+  projection transactions lock/recheck active ownership before persisting.
+- Normal Remove inbox queues local teardown, disables sync, disables the local
+  auth grant, cancels pending consent flows and removes the local link projection.
+  It does not remotely revoke Entra consent and does not delete Outlook messages.
+  Auth-only disconnect does not itself erase the projected inbox. Confirm cleanup
+  completion and retention expectations before promising erasure.
+- Prefer a forward rollback with provider-aware binaries and flags off. An older
+  Gmail-only binary may not decode persisted `MICROSOFT` enum values. Do not
+  blindly roll back the schema, remove enum values, or delete mailbox data. Any
+  destructive rollback needs a separately approved, tested restore plan.

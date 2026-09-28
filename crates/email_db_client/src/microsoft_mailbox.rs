@@ -59,12 +59,12 @@ pub async fn provision_microsoft_mailbox(
         INSERT INTO email_microsoft_mailboxes (
             link_id, tenant_id, mailbox_id, user_principal_name
         )
-        SELECT l.id, $3, $4, $5
+        SELECT l.id, $3, $4, $5::text
         FROM email_links l
         WHERE l.id = $1
           AND l.fusionauth_user_id = $2
           AND l.provider = 'MICROSOFT'::email_user_provider_enum
-          AND lower(l.email_address) = $5
+          AND lower(l.email_address) = $5::text
         ON CONFLICT (link_id) DO UPDATE SET
             tenant_id = EXCLUDED.tenant_id,
             mailbox_id = EXCLUDED.mailbox_id,
@@ -113,12 +113,12 @@ pub async fn upsert_microsoft_mailbox_for_owner(
         INSERT INTO email_microsoft_mailboxes (
             link_id, tenant_id, mailbox_id, user_principal_name
         )
-        SELECT l.id, $3, $4, $5
+        SELECT l.id, $3, $4, $5::text
         FROM email_links l
         WHERE l.id = $1
           AND l.fusionauth_user_id = $2
           AND l.provider = 'MICROSOFT'::email_user_provider_enum
-          AND lower(l.email_address) = $5
+          AND lower(l.email_address) = $5::text
         ON CONFLICT (link_id) DO UPDATE SET
             tenant_id = EXCLUDED.tenant_id,
             mailbox_id = EXCLUDED.mailbox_id,

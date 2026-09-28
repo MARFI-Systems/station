@@ -4,8 +4,8 @@ use anyhow::Context;
 use email_api_client::domain::models::EmailApiError;
 use email_api_client::outbound::microsoft_graph::{
     MicrosoftGraphBodyContentType, MicrosoftGraphDeltaCursor, MicrosoftGraphDeltaCursorKind,
-    MicrosoftGraphEmailAddress, MicrosoftGraphImportance,
-    MicrosoftGraphMessage, MicrosoftGraphMessageDeltaChange,
+    MicrosoftGraphEmailAddress, MicrosoftGraphImportance, MicrosoftGraphMessage,
+    MicrosoftGraphMessageDeltaChange,
 };
 use models_email::email::service::address::ContactInfo;
 use models_email::email::service::attachment::Attachment;
@@ -37,7 +37,9 @@ pub async fn process(
 
     match sync_operation {
         MicrosoftSyncOperation::DiscoverFolders => discover_folders(ctx, link, &token).await,
-        MicrosoftSyncOperation::PurgeFolder { folder_id } => purge_folder(ctx, link, folder_id).await,
+        MicrosoftSyncOperation::PurgeFolder { folder_id } => {
+            purge_folder(ctx, link, folder_id).await
+        }
         MicrosoftSyncOperation::SyncFolder {
             folder_id,
             expected_generation,
@@ -66,7 +68,10 @@ async fn discover_folders(
         .map(serde_json::from_value)
         .transpose()
         .context("invalid persisted Microsoft folder walk cursor")?;
-    let page = ctx.microsoft_graph.walk_mail_folders(token, cursor.as_ref()).await?;
+    let page = ctx
+        .microsoft_graph
+        .walk_mail_folders(token, cursor.as_ref())
+        .await?;
     let mut discovered = Vec::with_capacity(page.folders.len());
     for entry in page.folders {
         discovered.push(entry.folder.id.clone());
@@ -107,9 +112,18 @@ async fn discover_folders(
         return Ok(());
     }
     for folder_id in email_db_client::microsoft_native_sync::list_deleted_folder_ids_for_owner(
-        &ctx.db, &link.fusionauth_user_id, link.id,
-    ).await? {
-        enqueue(ctx, link.id, MicrosoftSyncOperation::PurgeFolder { folder_id }).await?;
+        &ctx.db,
+        &link.fusionauth_user_id,
+        link.id,
+    )
+    .await?
+    {
+        enqueue(
+            ctx,
+            link.id,
+            MicrosoftSyncOperation::PurgeFolder { folder_id },
+        )
+        .await?;
     }
     for folder in email_db_client::microsoft_folder_sync::list_microsoft_folders_for_owner(
         &ctx.db,
@@ -138,10 +152,19 @@ async fn purge_folder(
     folder_id: String,
 ) -> anyhow::Result<()> {
     let (_, has_more) = email_db_client::microsoft_native_sync::clear_projected_folder_for_owner(
-        &ctx.db, &link.fusionauth_user_id, link.id, &folder_id,
-    ).await?;
+        &ctx.db,
+        &link.fusionauth_user_id,
+        link.id,
+        &folder_id,
+    )
+    .await?;
     if has_more {
-        enqueue(ctx, link.id, MicrosoftSyncOperation::PurgeFolder { folder_id }).await?;
+        enqueue(
+            ctx,
+            link.id,
+            MicrosoftSyncOperation::PurgeFolder { folder_id },
+        )
+        .await?;
     }
     Ok(())
 }
@@ -169,17 +192,25 @@ async fn sync_folder(
         return Ok(());
     }
     if rebuild {
-        let (_, has_more) = email_db_client::microsoft_native_sync::clear_projected_folder_for_owner(
-            &ctx.db,
-            &link.fusionauth_user_id,
-            link.id,
-            &folder_id,
-        )
-        .await?;
+        let (_, has_more) =
+            email_db_client::microsoft_native_sync::clear_projected_folder_for_owner(
+                &ctx.db,
+                &link.fusionauth_user_id,
+                link.id,
+                &folder_id,
+            )
+            .await?;
         if has_more {
-            enqueue(ctx, link.id, MicrosoftSyncOperation::SyncFolder {
-                folder_id, expected_generation, rebuild: true,
-            }).await?;
+            enqueue(
+                ctx,
+                link.id,
+                MicrosoftSyncOperation::SyncFolder {
+                    folder_id,
+                    expected_generation,
+                    rebuild: true,
+                },
+            )
+            .await?;
             return Ok(());
         }
     }
@@ -225,21 +256,38 @@ async fn sync_folder(
     for change in batch.changes {
         match change {
             MicrosoftGraphMessageDeltaChange::Upsert(delta_message) => {
-                let Some(full) = ctx.microsoft_graph.get_message(token, &delta_message.id).await? else {
+                let Some(full) = ctx
+                    .microsoft_graph
+                    .get_message(token, &delta_message.id)
+                    .await?
+                else {
                     email_db_client::microsoft_native_sync::remove_projected_message_from_folder_for_owner(
                         &ctx.db, &link.fusionauth_user_id, link.id, &folder_id, &delta_message.id,
                     ).await?;
                     continue;
                 };
-                let actual_folder_id = full.parent_folder_id.as_deref().unwrap_or(&folder_id).to_owned();
+                let actual_folder_id = full
+                    .parent_folder_id
+                    .as_deref()
+                    .unwrap_or(&folder_id)
+                    .to_owned();
                 let actual_folder = email_db_client::microsoft_native_sync::fetch_folder_for_owner(
-                    &ctx.db, &link.fusionauth_user_id, link.id, &actual_folder_id,
-                ).await?.unwrap_or_else(|| folder.clone());
+                    &ctx.db,
+                    &link.fusionauth_user_id,
+                    link.id,
+                    &actual_folder_id,
+                )
+                .await?
+                .unwrap_or_else(|| folder.clone());
                 ensure_labels(&ctx.db, link.id, &actual_folder).await?;
                 let mut projected = map_message(link, &actual_folder, full);
                 email_db_client::microsoft_native_sync::upsert_projected_message_for_owner(
-                    &ctx.db, &link.fusionauth_user_id, &actual_folder_id, &mut projected,
-                ).await?;
+                    &ctx.db,
+                    &link.fusionauth_user_id,
+                    &actual_folder_id,
+                    &mut projected,
+                )
+                .await?;
             }
             MicrosoftGraphMessageDeltaChange::Removed(removed) => {
                 email_db_client::microsoft_native_sync::remove_projected_message_from_folder_for_owner(
@@ -251,16 +299,17 @@ async fn sync_folder(
 
     let serialized_cursor = serde_json::to_string(&batch.cursor)?;
     let round_complete = batch.cursor.kind() == MicrosoftGraphDeltaCursorKind::Delta;
-    let Some(committed) = email_db_client::microsoft_folder_sync::commit_microsoft_folder_cursor_for_owner(
-        &ctx.db,
-        &link.fusionauth_user_id,
-        link.id,
-        &folder_id,
-        expected_generation,
-        &serialized_cursor,
-        round_complete,
-    )
-    .await?
+    let Some(committed) =
+        email_db_client::microsoft_folder_sync::commit_microsoft_folder_cursor_for_owner(
+            &ctx.db,
+            &link.fusionauth_user_id,
+            link.id,
+            &folder_id,
+            expected_generation,
+            &serialized_cursor,
+            round_complete,
+        )
+        .await?
     else {
         return Ok(());
     };
@@ -285,7 +334,10 @@ async fn enqueue(
     sync_operation: MicrosoftSyncOperation,
 ) -> anyhow::Result<()> {
     ctx.sqs_client
-        .enqueue_link_manager_notification(LinkManagerMessage::MicrosoftSync { link_id, sync_operation })
+        .enqueue_link_manager_notification(LinkManagerMessage::MicrosoftSync {
+            link_id,
+            sync_operation,
+        })
         .await
 }
 
@@ -295,7 +347,11 @@ async fn seed_well_known_folders(
     token: &email_api_client::domain::models::AccessToken,
 ) -> anyhow::Result<()> {
     for well_known_name in ["inbox", "sentitems", "drafts", "deleteditems", "junkemail"] {
-        let Some(folder) = ctx.microsoft_graph.get_mail_folder(token, well_known_name).await? else {
+        let Some(folder) = ctx
+            .microsoft_graph
+            .get_mail_folder(token, well_known_name)
+            .await?
+        else {
             continue;
         };
         email_db_client::microsoft_folder_sync::upsert_microsoft_folder_for_owner(
@@ -310,7 +366,9 @@ async fn seed_well_known_folders(
             },
         )
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Microsoft folder owner boundary rejected canonical folder"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("Microsoft folder owner boundary rejected canonical folder")
+        })?;
     }
     Ok(())
 }
@@ -322,8 +380,18 @@ async fn ensure_labels(
 ) -> anyhow::Result<()> {
     let mut labels = vec![
         folder_label(link_id, folder),
-        label(link_id, system_labels::UNREAD, system_labels::UNREAD, LabelType::System),
-        label(link_id, system_labels::IMPORTANT, system_labels::IMPORTANT, LabelType::System),
+        label(
+            link_id,
+            system_labels::UNREAD,
+            system_labels::UNREAD,
+            LabelType::System,
+        ),
+        label(
+            link_id,
+            system_labels::IMPORTANT,
+            system_labels::IMPORTANT,
+            LabelType::System,
+        ),
     ];
     if let Some(system) = system_label_id(folder.well_known_name.as_deref()) {
         labels.push(label(link_id, system, system, LabelType::System));
@@ -381,15 +449,29 @@ fn map_message(
         labels.push(label(link.id, system, system, LabelType::System));
     }
     if !message.is_read {
-        labels.push(label(link.id, system_labels::UNREAD, system_labels::UNREAD, LabelType::System));
+        labels.push(label(
+            link.id,
+            system_labels::UNREAD,
+            system_labels::UNREAD,
+            LabelType::System,
+        ));
     }
     if message.importance == MicrosoftGraphImportance::High {
-        labels.push(label(link.id, system_labels::IMPORTANT, system_labels::IMPORTANT, LabelType::System));
+        labels.push(label(
+            link.id,
+            system_labels::IMPORTANT,
+            system_labels::IMPORTANT,
+            LabelType::System,
+        ));
     }
     let (body_text, body_html_sanitized) = match message.body {
         Some(body) => match body.content_type {
-            MicrosoftGraphBodyContentType::Html => (None, Some(email_utils::sanitize_email_html(&body.content))),
-            MicrosoftGraphBodyContentType::Text | MicrosoftGraphBodyContentType::Other(_) => (Some(body.content), None),
+            MicrosoftGraphBodyContentType::Html => {
+                (None, Some(email_utils::sanitize_email_html(&body.content)))
+            }
+            MicrosoftGraphBodyContentType::Text | MicrosoftGraphBodyContentType::Other(_) => {
+                (Some(body.content), None)
+            }
         },
         None => (None, None),
     };
@@ -416,21 +498,31 @@ fn map_message(
         from: message.from.map(map_address),
         to: message.to_recipients.into_iter().map(map_address).collect(),
         cc: message.cc_recipients.into_iter().map(map_address).collect(),
-        bcc: message.bcc_recipients.into_iter().map(map_address).collect(),
+        bcc: message
+            .bcc_recipients
+            .into_iter()
+            .map(map_address)
+            .collect(),
         labels,
         body_text,
         body_html_sanitized,
         body_macro: None,
-        attachments: message.attachments.into_iter().map(|attachment| Attachment {
-            db_id: macro_uuid::generate_uuid_v7(),
-            provider_id: Some(attachment.id),
-            data_url: None,
-            filename: attachment.name,
-            mime_type: attachment.content_type,
-            size_bytes: attachment.size_bytes.and_then(|size| i64::try_from(size).ok()),
-            sfs_id: None,
-            content_id: attachment.content_id,
-        }).collect(),
+        attachments: message
+            .attachments
+            .into_iter()
+            .map(|attachment| Attachment {
+                db_id: macro_uuid::generate_uuid_v7(),
+                provider_id: Some(attachment.id),
+                data_url: None,
+                filename: attachment.name,
+                mime_type: attachment.content_type,
+                size_bytes: attachment
+                    .size_bytes
+                    .and_then(|size| i64::try_from(size).ok()),
+                sfs_id: None,
+                content_id: attachment.content_id,
+            })
+            .collect(),
         attachments_draft: vec![],
         attachments_forwarded: vec![],
         headers_json: None,
@@ -440,7 +532,11 @@ fn map_message(
 }
 
 fn map_address(address: MicrosoftGraphEmailAddress) -> ContactInfo {
-    ContactInfo { email: address.address.to_ascii_lowercase(), name: address.name, photo_url: None }
+    ContactInfo {
+        email: address.address.to_ascii_lowercase(),
+        name: address.name,
+        photo_url: None,
+    }
 }
 
 #[cfg(test)]
@@ -450,14 +546,20 @@ mod test {
     #[test]
     fn only_canonical_well_known_names_define_system_semantics() {
         assert_eq!(system_label_id(Some("inbox")), Some(system_labels::INBOX));
-        assert_eq!(system_label_id(Some("sentitems")), Some(system_labels::SENT));
+        assert_eq!(
+            system_label_id(Some("sentitems")),
+            Some(system_labels::SENT)
+        );
         assert_eq!(system_label_id(Some("Boîte de réception")), None);
         assert_eq!(system_label_id(Some("custom inbox")), None);
     }
 
     #[test]
     fn normalizes_graph_contacts() {
-        let contact = map_address(MicrosoftGraphEmailAddress { name: Some("A".into()), address: "A@EXAMPLE.COM".into() });
+        let contact = map_address(MicrosoftGraphEmailAddress {
+            name: Some("A".into()),
+            address: "A@EXAMPLE.COM".into(),
+        });
         assert_eq!(contact.email, "a@example.com");
     }
 }

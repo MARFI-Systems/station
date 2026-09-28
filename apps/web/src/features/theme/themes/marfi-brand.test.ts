@@ -1,4 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+// Matches this suite's sibling theme tests (themeColorTokens.test.ts,
+// themeValidation.test.ts, colorUtil.test.ts), all under vitest's 'theme'
+// project (vitest.config.ts): `src/features/theme/**/*.{test,spec}.{ts,tsx}`.
+// This file previously imported from 'bun:test', which vitest's runtime
+// transform tolerated (bun:test's API is source-compatible) but tsc's
+// typecheck step cannot resolve, since `bun-types` isn't in tsconfig's
+// `types`. vitest exports `test` as a synonym of `it`, so only the import
+// source changes here.
+import { describe, expect, test } from 'vitest';
 import { macroDarkTheme } from './macro-dark';
 import { macroLightTheme } from './macro-light';
 

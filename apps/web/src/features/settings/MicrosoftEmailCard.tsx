@@ -115,8 +115,8 @@ export function MicrosoftEmailCard() {
 
         <Show when={connected()}>
           <SettingsRow
-            label="Add another inbox"
-            description="Connect another Microsoft 365 (Outlook) account, read-only."
+            label="Reconnect mailbox"
+            description="Reauthorize this mailbox. Remove it before connecting a different Microsoft account."
           >
             <ConnectAction
               label="Connect"
@@ -144,7 +144,7 @@ export function MicrosoftEmailCard() {
           <Panel.Body class="p-6 font-sans flex flex-col gap-3">
             <Dialog.Description class="text-ink-muted text-sm/tight font-normal">
               Remove <span class="text-ink">{removeTarget()?.email}</span>?
-              This clears all of its email data from Macro and cannot be
+              This clears all of its email data from Station and cannot be
               undone.
             </Dialog.Description>
             <div class="pt-3 justify-end items-center gap-3 inline-flex">
@@ -184,7 +184,7 @@ function MicrosoftInboxRow(props: {
           </Show>
         </div>
         <span class="text-xs text-ink-muted">
-          Macro can only read this mailbox
+          Station can only read this mailbox
         </span>
       </div>
       <Tooltip label="Remove inbox">
