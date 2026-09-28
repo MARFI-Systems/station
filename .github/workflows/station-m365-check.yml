@@ -1,0 +1,117 @@
+name: Station Microsoft mailbox checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - station/m365-readonly
+    paths:
+      - crates/**
+      - services/authentication_service/**
+      - services/email_service/**
+      - services/email_refresh_handler/**
+      - apps/web/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/station-m365-check.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: station-m365-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Graph and per-user mailbox backend
+    runs-on: monkci-ubuntu-24.04-8
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: '1'
+    steps:
+      - name: Checkout isolated feature branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up repository Nix tools without private caches
+        uses: ./.github/actions/setup-nix
+
+      - name: Enter pinned repository development shell
+        uses: ./.github/actions/setup-nix-dev-shell
+
+      - name: Record toolchain and resolve workspace metadata
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          cargo metadata --format-version 1 > "$RUNNER_TEMP/station-m365-metadata.json"
+          git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
+
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+
+      - name: Create disposable runner-only test databases
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          just run_dbs -d
+          just setup_test_envs
+          just setup_macrodb
+
+      - name: Test Graph adapter and Gmail regressions
+        run: |
+          set -euo pipefail
+          unset SQLX_OFFLINE RUSTC_WRAPPER
+          cargo test --locked -p email_api_client --features outbound-gmail,outbound-microsoft-graph
+
+      - name: Type-check native mailbox services against disposable schema
+        run: |
+          set -euo pipefail
+          unset SQLX_OFFLINE RUSTC_WRAPPER
+          cargo check --locked -p authentication_service -p email_service -p email_refresh_handler
+
+      - name: Upload resolved lockfile and metadata evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-m365-build-evidence
+          path: |
+            Cargo.lock
+            ${{ runner.temp }}/station-m365-metadata.json
+            ${{ runner.temp }}/station-m365-lock.diff
+          if-no-files-found: warn
+          retention-days: 7
+
+  frontend:
+    name: Native inbox UI compile
+    runs-on: monkci-ubuntu-24.04-8
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated feature branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install pinned workspace dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Compile web without deploying or granting mailbox access
+        working-directory: apps/web
+        env:
+          MODE: development
+          NODE_ENV: production
+          VITE_LOCAL_SERVERS: ALL
+          VITE_LOCAL_BACKEND_ORIGIN: same-origin
+          VITE_AI_EDITING_WORKER_URL: /ai-editing
+        run: bun run --bun build

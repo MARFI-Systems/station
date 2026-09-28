@@ -6,8 +6,10 @@
 pub mod domain;
 
 /// Provider-specific outbound adapters.
-#[cfg(feature = "outbound-gmail")]
+#[cfg(any(feature = "outbound-gmail", feature = "outbound-microsoft-graph"))]
 pub mod outbound;
 
 #[cfg(feature = "outbound-gmail")]
 pub use outbound::gmail::GmailApiClientRepository;
+#[cfg(feature = "outbound-microsoft-graph")]
+pub use outbound::microsoft_graph::MicrosoftGraphMailClient;
