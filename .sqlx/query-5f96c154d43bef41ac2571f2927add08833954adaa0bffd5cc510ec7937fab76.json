@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_links\n        SET is_sync_active = false, updated_at = now()\n        WHERE id = $1\n          AND fusionauth_user_id = $2\n          AND provider = 'MICROSOFT'::email_user_provider_enum\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5f96c154d43bef41ac2571f2927add08833954adaa0bffd5cc510ec7937fab76"
+}

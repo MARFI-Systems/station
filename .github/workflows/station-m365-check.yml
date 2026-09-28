@@ -7,6 +7,8 @@ on:
       - station/m365-readonly
     paths:
       - .sqlx/**
+      - static_assets/schema.graphql
+      - .github/scripts/package-station-mailbox.sh
       - crates/**
       - services/authentication_service/**
       - services/email_service/**
@@ -57,7 +59,21 @@ jobs:
           git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
 
       - name: Verify Rust formatting
-        run: cargo fmt --all -- --check
+        run: |
+          if ! cargo fmt --all -- --check; then
+            cargo fmt --all
+            git diff --binary > "$RUNNER_TEMP/station-rustfmt.patch"
+            exit 1
+          fi
+
+      - name: Verify CHECKED-IN SQLx cache before database setup or regeneration
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER
+          CARGO_TARGET_DIR="$RUNNER_TEMP/station-m365-offline-target" SQLX_OFFLINE=true cargo check --locked -p authentication_service -p email_service -p email_refresh_handler -p graphql_email --features email_service/microsoft_graph_readonly
+
+      - name: Build exact-commit mailbox binaries and runtime closure
+        run: bash .github/scripts/package-station-mailbox.sh
 
       - name: Create disposable runner-only test databases
         run: |
@@ -82,6 +98,7 @@ jobs:
           cargo test --locked -p email_db_client microsoft
           cargo test --locked -p models_email --lib
           cargo test --locked -p graphql_email provider_test
+          cargo test --locked -p email_refresh_handler run_mode_
           cargo test --locked -p email --all-features microsoft
           cargo test --locked -p authentication_service microsoft
           cargo test --locked -p email_service --features microsoft_graph_readonly microsoft
@@ -94,30 +111,10 @@ jobs:
           cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
 
       - name: Generate canonical GraphQL schema artifact
-        run: cargo run --locked -p complete_graph --bin graphql_schema -- "$RUNNER_TEMP/station-schema.graphql"
-
-      - name: Generate workspace SQLx metadata on the disposable runner
         run: |
           set -euo pipefail
-          unset SQLX_OFFLINE RUSTC_WRAPPER
-          cp -a .sqlx "$RUNNER_TEMP/station-sqlx-before"
-          prepare_status=0
-          just prepare_db || prepare_status=$?
-          # Preserve unrelated cached queries rather than blanket-delete metadata.
-          cp -an "$RUNNER_TEMP/station-sqlx-before/." .sqlx/
-          git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
-          git status --short -- .sqlx > "$RUNNER_TEMP/station-m365-sqlx-status.txt"
-          git ls-files --modified --others --exclude-standard -z .sqlx |
-            while IFS= read -r -d "" file; do
-              if test -f "$file"; then printf "%s\0" "$file"; fi
-            done | tar --null -T - -czf "$RUNNER_TEMP/station-m365-sqlx-source.tar.gz"
-          test "$prepare_status" -eq 0
-
-      - name: Verify native mailbox release checks with offline SQLx metadata
-        run: |
-          set -euo pipefail
-          unset RUSTC_WRAPPER
-          CARGO_TARGET_DIR="$RUNNER_TEMP/station-m365-offline-target" SQLX_OFFLINE=true cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
+          cargo run --locked -p complete_graph --bin graphql_schema -- "$RUNNER_TEMP/station-schema.graphql"
+          cmp static_assets/schema.graphql "$RUNNER_TEMP/station-schema.graphql"
 
       - name: Upload resolved lockfile and metadata evidence
         if: always()
@@ -126,12 +123,19 @@ jobs:
           name: station-m365-build-evidence
           path: |
             Cargo.lock
+            ${{ runner.temp }}/station-rustfmt.patch
             ${{ runner.temp }}/station-schema.graphql
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
-            ${{ runner.temp }}/station-m365-sqlx-status.txt
-            ${{ runner.temp }}/station-m365-sqlx-source.tar.gz
           if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload verified mailbox runtime release
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-mailbox-release
+          path: ${{ runner.temp }}/station-mailbox-release/
+          if-no-files-found: error
           retention-days: 7
 
   frontend:
@@ -173,4 +177,13 @@ jobs:
           VITE_LOCAL_SERVERS: ALL
           VITE_LOCAL_BACKEND_ORIGIN: same-origin
           VITE_AI_EDITING_WORKER_URL: /ai-editing
+          VITE_ENABLE_MICROSOFT365_EMAIL: 'true'
         run: bun run --bun build
+
+      - name: Upload mailbox-enabled frontend release
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-mailbox-frontend
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 7

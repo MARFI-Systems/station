@@ -106,3 +106,29 @@ async fn fetch_inactive_link_ids_respects_threshold_parameters(pool: Pool<Postgr
 
     Ok(())
 }
+
+#[test]
+fn run_mode_defaults_to_lambda() {
+    assert_eq!(crate::parse_run_mode(Vec::new()).unwrap(), crate::RunMode::Lambda);
+}
+
+#[test]
+fn run_mode_accepts_explicit_microsoft_once() {
+    assert_eq!(
+        crate::parse_run_mode(["--microsoft-once".into()]).unwrap(),
+        crate::RunMode::MicrosoftOnce
+    );
+}
+
+#[test]
+fn run_mode_rejects_broad_once_unknown_or_extra_arguments() {
+    assert!(crate::parse_run_mode(["--once".into()]).is_err());
+    assert!(crate::parse_run_mode(["--loop".into()]).is_err());
+    assert!(
+        crate::parse_run_mode([
+            "--microsoft-once".into(),
+            "--microsoft-once".into()
+        ])
+        .is_err()
+    );
+}

@@ -42,7 +42,7 @@ maybe_env_vars! {
     pub struct MicrosoftClientSecret;
     pub struct MicrosoftTenantId;
     pub struct MicrosoftTokenKmsKeyId;
-    /// Fixed frontend completion URL; must end exactly at /settings/connections.
+    /// Fixed frontend completion URL; must use an explicitly allowed settings path.
     pub struct MicrosoftMailboxCompletionUrl;
     /// KMS key that encrypts users' Cursor API keys. Deliberately not the
     /// Microsoft one: sharing it would grant whatever decrypts Cursor keys
@@ -251,27 +251,10 @@ impl Config {
 
     /// Resolves the fixed mailbox completion URL when the feature is enabled.
     pub(crate) fn microsoft_mailbox_completion_url(&self) -> anyhow::Result<Option<String>> {
-        if !self.microsoft_mailbox_oauth_enabled {
-            return Ok(None);
-        }
-        let raw = nonblank_value(self.microsoft_mailbox_completion_url.value()).context(
-            "MICROSOFT_MAILBOX_COMPLETION_URL is required when mailbox OAuth is enabled",
-        )?;
-        let url = url::Url::parse(raw)
-            .context("MICROSOFT_MAILBOX_COMPLETION_URL must be an absolute URL")?;
-        let secure_origin = url.scheme() == "https"
-            || (url.scheme() == "http"
-                && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1")));
-        if !secure_origin
-            || url.path() != "/settings/connections"
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
-            anyhow::bail!(
-                "MICROSOFT_MAILBOX_COMPLETION_URL must be a fixed /settings/connections URL without query or fragment"
-            );
-        }
-        Ok(Some(url.to_string()))
+        resolve_microsoft_mailbox_completion_url(
+            self.microsoft_mailbox_oauth_enabled,
+            &self.microsoft_mailbox_completion_url,
+        )
     }
 
     /// Resolves the signup policy for the configured environment.
@@ -295,6 +278,39 @@ impl Config {
     pub(crate) fn gtm_invite_config(&self) -> anyhow::Result<GtmInviteConfig> {
         resolve_gtm_invite_config(&self.gtm_invite_promo_code, &self.gtm_invite_link_ttl_hours)
     }
+}
+
+fn resolve_microsoft_mailbox_completion_url(
+    enabled: bool,
+    completion_url: &MicrosoftMailboxCompletionUrl,
+) -> anyhow::Result<Option<String>> {
+    if !enabled {
+        return Ok(None);
+    }
+    let raw = nonblank_value(completion_url.value()).context(
+        "MICROSOFT_MAILBOX_COMPLETION_URL is required when mailbox OAuth is enabled",
+    )?;
+    let url = url::Url::parse(raw)
+        .context("MICROSOFT_MAILBOX_COMPLETION_URL must be an absolute URL")?;
+    let secure_origin = url.scheme() == "https"
+        || (url.scheme() == "http"
+            && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1")));
+    let allowed_path = matches!(
+        url.path(),
+        "/settings/connections" | "/app/settings/connections"
+    );
+    let has_userinfo = !url.username().is_empty() || url.password().is_some();
+    if !secure_origin
+        || !allowed_path
+        || has_userinfo
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        anyhow::bail!(
+            "MICROSOFT_MAILBOX_COMPLETION_URL must be a fixed /settings/connections or /app/settings/connections URL without userinfo, query, or fragment"
+        );
+    }
+    Ok(Some(url.to_string()))
 }
 
 fn resolve_microsoft_credentials(

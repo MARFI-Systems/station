@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_microsoft_mailboxes\n        SET disconnected_at = COALESCE(disconnected_at, now()), updated_at = now()\n        WHERE link_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d6c8587180600dac0cb0b63f2ca8288d063682fa9063e6efaf0f864eeb5d4e7f"
+}

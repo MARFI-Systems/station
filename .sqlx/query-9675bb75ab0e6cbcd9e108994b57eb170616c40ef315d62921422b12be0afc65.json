@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM microsoft_oauth_grants\n            WHERE fusionauth_user_id = $1\n              AND email_address = $2\n              AND refresh_token_ciphertext = $3\n              AND grant_purpose = 'mailbox_read'\n              AND grant_schema_version = 1\n              AND disconnected_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9675bb75ab0e6cbcd9e108994b57eb170616c40ef315d62921422b12be0afc65"
+}

@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE microsoft_mailbox_oauth_flows\n            SET consumed_at = now()\n            WHERE flow_id = $1\n              AND fusionauth_user_id = $2\n              AND state_hash = $3\n              AND consumed_at IS NULL\n              AND canceled_at IS NULL\n              AND completed_at IS NULL\n              AND expires_at >= now()\n              AND expires_at <= created_at + interval '10 minutes'\n            RETURNING verifier_ciphertext, encrypted_data_key, nonce,\n                      encryption_version, kms_key_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verifier_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "encrypted_data_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "nonce",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "encryption_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "kms_key_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1368c55f9549cec6c2ce71070bb5ff307a26c7821b19a031bd2ca111040ac17e"
+}

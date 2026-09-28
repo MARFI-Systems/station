@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO microsoft_mailbox_oauth_flows (\n                flow_id, fusionauth_user_id, state_hash, verifier_ciphertext,\n                encrypted_data_key, nonce, encryption_version, kms_key_id, expires_at\n            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2ccf62f87ae728902a100f97dd66a6b6185220b7257084941ed311c43c2cf1b4"
+}

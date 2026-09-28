@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT flow_id\n           FROM microsoft_mailbox_oauth_flows\n           WHERE flow_id = $1\n             AND fusionauth_user_id = $2\n             AND consumed_at IS NOT NULL\n             AND canceled_at IS NULL\n             AND completed_at IS NULL\n             AND expires_at >= now()\n             AND expires_at <= created_at + interval '10 minutes'\n           FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "flow_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "88cd67bf9fd482cd8cef4e49bf80d0b1a971f73d8d0720f55de2ad08f51056b1"
+}

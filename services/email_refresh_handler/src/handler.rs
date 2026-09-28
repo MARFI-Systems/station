@@ -38,6 +38,12 @@ pub async fn handler(
     Ok(())
 }
 
+/// Schedules Microsoft mailbox discovery once for a host scheduler and returns an error if the database or queue fails.
+#[tracing::instrument(skip(ctx))]
+pub async fn run_microsoft_once(ctx: context::Context) -> Result<(), Error> {
+    send_microsoft_sync_messages_with_failure(&ctx, true).await
+}
+
 /// send health-check notifications for active links, bucketed by id hash so each link is
 /// probed once per configured interval across the hourly runs
 async fn send_health_check_messages(ctx: &context::Context) -> Result<(), Error> {
@@ -254,6 +260,13 @@ pub async fn fetch_inactive_link_ids(
 /// Schedules a fresh bounded folder walk for active Microsoft mailboxes on the configured health-poll cadence. The
 /// link-manager worker fans this out into per-folder delta units and uses cursor CAS for overlap.
 async fn send_microsoft_sync_messages(ctx: &context::Context) -> Result<(), Error> {
+    send_microsoft_sync_messages_with_failure(ctx, false).await
+}
+
+async fn send_microsoft_sync_messages_with_failure(
+    ctx: &context::Context,
+    fail_closed: bool,
+) -> Result<(), Error> {
     let interval_hours = ctx.config.health_poll_interval_hours as i32;
     if interval_hours <= 0 {
         return Ok(());
@@ -270,22 +283,31 @@ async fn send_microsoft_sync_messages(ctx: &context::Context) -> Result<(), Erro
         bucket
     )
     .fetch_all(&ctx.db)
-    .await
-    .unwrap_or_else(|error| {
-        tracing::error!(error=?error, "Error fetching Microsoft mailbox links for sync");
-        Vec::new()
-    });
+    .await;
+    let link_ids = match link_ids {
+        Ok(link_ids) => link_ids,
+        Err(error) => {
+            tracing::error!(error=?error, "Error fetching Microsoft mailbox links for sync");
+            if fail_closed {
+                return Err(error.into());
+            }
+            Vec::new()
+        }
+    };
     for link_id in link_ids {
-        ctx.sqs_client
+        let result = ctx
+            .sqs_client
             .enqueue_link_manager_notification(LinkManagerMessage::MicrosoftSync {
                 link_id,
                 sync_operation: MicrosoftSyncOperation::DiscoverFolders,
             })
-            .await
-            .inspect_err(|error| {
-                tracing::error!(error=?error, link_id=%link_id, "Error enqueueing Microsoft mailbox sync");
-            })
-            .ok();
+            .await;
+        if let Err(error) = result {
+            tracing::error!(error=?error, link_id=%link_id, "Error enqueueing Microsoft mailbox sync");
+            if fail_closed {
+                return Err(error.into());
+            }
+        }
     }
     Ok(())
 }

@@ -142,6 +142,52 @@ fn microsoft_token_kms_key_id(value: Option<&'static str>) -> MicrosoftTokenKmsK
     }
 }
 
+fn microsoft_mailbox_completion_url(value: Option<&'static str>) -> MicrosoftMailboxCompletionUrl {
+    match value {
+        Some(value) => MicrosoftMailboxCompletionUrl::new_testing(value),
+        None => MicrosoftMailboxCompletionUrl::new_unset(),
+    }
+}
+
+#[test]
+fn microsoft_mailbox_completion_url_accepts_only_supported_settings_paths() {
+    for value in [
+        "https://station.marfi.app/settings/connections",
+        "https://station.marfi.app/app/settings/connections",
+        "http://localhost/app/settings/connections",
+    ] {
+        assert_eq!(
+            resolve_microsoft_mailbox_completion_url(
+                true,
+                &microsoft_mailbox_completion_url(Some(value)),
+            )
+            .expect("supported completion URL should resolve"),
+            Some(value.to_owned())
+        );
+    }
+}
+
+#[test]
+fn microsoft_mailbox_completion_url_rejects_untrusted_variants() {
+    for value in [
+        "https://station.marfi.app/app/settings/connections/alternate",
+        "https://station.marfi.app/alternate/settings/connections",
+        "https://station.marfi.app/app/settings/connections?returnURL=/documents",
+        "https://station.marfi.app/app/settings/connections#mailbox",
+        "https://user@station.marfi.app/app/settings/connections",
+        "http://station.marfi.app/app/settings/connections",
+    ] {
+        assert!(
+            resolve_microsoft_mailbox_completion_url(
+                true,
+                &microsoft_mailbox_completion_url(Some(value)),
+            )
+            .is_err(),
+            "untrusted completion URL should be rejected: {value}"
+        );
+    }
+}
+
 fn development_allowlist(value: Option<&'static str>) -> DevelopmentSignupAllowlistJson {
     match value {
         Some(value) => DevelopmentSignupAllowlistJson::new_testing(value),

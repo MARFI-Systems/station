@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO microsoft_oauth_grants (\n                fusionauth_user_id,\n                email_address,\n                refresh_token_ciphertext,\n                encrypted_data_key,\n                nonce,\n                encryption_version,\n                kms_key_id,\n                grant_purpose,\n                grant_schema_version\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, 'legacy_identity', 0)\n            ON CONFLICT (fusionauth_user_id, email_address) DO UPDATE SET\n                refresh_token_ciphertext = EXCLUDED.refresh_token_ciphertext,\n                encrypted_data_key = EXCLUDED.encrypted_data_key,\n                nonce = EXCLUDED.nonce,\n                encryption_version = EXCLUDED.encryption_version,\n                kms_key_id = EXCLUDED.kms_key_id,\n                grant_purpose = 'legacy_identity',\n                grant_schema_version = 0,\n                microsoft_tenant_id = NULL,\n                microsoft_object_id = NULL,\n                disconnected_at = NULL,\n                updated_at = now(),\n                last_refreshed_at = now()\n            RETURNING\n                fusionauth_user_id,\n                email_address,\n                refresh_token_ciphertext,\n                encrypted_data_key,\n                nonce,\n                encryption_version,\n                kms_key_id,\n                created_at,\n                updated_at,\n                last_refreshed_at,\n                microsoft_tenant_id,\n                microsoft_object_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fusionauth_user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "email_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "refresh_token_ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "encrypted_data_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "nonce",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "encryption_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "kms_key_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_refreshed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "microsoft_tenant_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "microsoft_object_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "61c5bab8b18c966aba3c080caf75d317890d9b1928bad03a39fc1e99b432e152"
+}

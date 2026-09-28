@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE microsoft_mailbox_oauth_flows\n           SET completed_at = now()\n           WHERE flow_id = $1 AND fusionauth_user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "390efbc79799cef2cc50c5fb95ac28303a45805faa6a5468c3cf2c5577da2366"
+}

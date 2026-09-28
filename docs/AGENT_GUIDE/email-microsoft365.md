@@ -346,7 +346,8 @@ before the following operational steps. Never put credentials in Git or notes.
    permissions. Do not print token responses, authorization codes, state, refresh
    tokens, or delta URLs in operational logs.
 5. Set `MICROSOFT_MAILBOX_COMPLETION_URL` to the deployment's HTTPS
-   `/settings/connections` URL with no query/fragment. Keep
+   `/settings/connections` URL (or `/app/settings/connections` for the local-stack
+   router prefix), with no userinfo/query/fragment. Keep
    `MICROSOFT_MAILBOX_OAUTH_ENABLED` false until the pilot is approved.
 6. The email-service artifact must include `microsoft_graph_readonly`, which is
    excluded from default Cargo features. The browser flag is
@@ -396,3 +397,26 @@ before the following operational steps. Never put credentials in Git or notes.
   Gmail-only binary may not decode persisted `MICROSOFT` enum values. Do not
   blindly roll back the schema, remove enum values, or delete mailbox data. Any
   destructive rollback needs a separately approved, tested restore plan.
+
+### Self-hosted Station release notes
+
+- The development proxy mounts the frontend at `/app/` and strips `/auth/` for the
+  authentication service. Set the public auth base URL to the HTTPS origin plus
+  `/auth`, and the fixed completion URL to the HTTPS origin plus
+  `/app/settings/connections`. Register the auth base URL plus
+  `/microsoft-mailbox/callback` as a Web redirect, not an SPA/public-client redirect.
+- Do not infer a running refresh schedule from the production Pulumi definitions.
+  A self-hosted stack without Lambda/EventBridge can invoke the explicit
+  `email_refresh_handler --microsoft-once` mode hourly with overlap prevention.
+  It only schedules Microsoft discovery and fails nonzero on DB/SQS errors; it
+  does not enable new Gmail maintenance or timed deletions. The default no-argument
+  Lambda path is unchanged.
+- Build on Monk with the non-default Microsoft feature and checked-in SQLx cache.
+  Nix-built executables need their exact runtime library closure; the release
+  packager preserves it and records commit and binary/archive hashes. Bind that
+  release into only the affected services and retain the previous release.
+- Public Mailpit routes, developer bootstrap credentials, untested administrator
+  recovery and missing protected backups block real-mail enablement. Secure the
+  login path and verify recovery before rotating credentials. Never infer safety
+  from a blocked container port when an HTTPS reverse proxy exposes the same route.
+- Artifact creation or app registration alone is not deployment or mailbox consent.

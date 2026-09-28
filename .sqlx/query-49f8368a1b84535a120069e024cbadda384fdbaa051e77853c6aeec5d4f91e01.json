@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE email_microsoft_folder_sync f\n        SET is_deleted = true,\n            delta_cursor = NULL,\n            cursor_generation = f.cursor_generation + 1,\n            updated_at = now()\n        FROM email_microsoft_mailboxes m, email_links l\n        WHERE f.link_id = $1\n          AND f.folder_id = $2\n          AND l.fusionauth_user_id = $3\n          AND m.link_id = f.link_id\n          AND l.id = f.link_id\n          AND l.provider = 'MICROSOFT'::email_user_provider_enum\n          AND l.is_sync_active = true\n          AND m.disconnected_at IS NULL\n          AND f.is_deleted = false\n        RETURNING f.link_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "link_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "49f8368a1b84535a120069e024cbadda384fdbaa051e77853c6aeec5d4f91e01"
+}

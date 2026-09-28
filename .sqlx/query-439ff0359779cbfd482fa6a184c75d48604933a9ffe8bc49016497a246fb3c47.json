@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE microsoft_oauth_grants SET\n                refresh_token_ciphertext = $4,\n                encrypted_data_key = $5,\n                nonce = $6,\n                encryption_version = $7,\n                kms_key_id = $8,\n                updated_at = now(),\n                last_refreshed_at = now()\n            WHERE fusionauth_user_id = $1\n              AND email_address = $2\n              AND refresh_token_ciphertext = $3\n              AND grant_purpose = 'mailbox_read'\n              AND grant_schema_version = 1\n              AND disconnected_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "439ff0359779cbfd482fa6a184c75d48604933a9ffe8bc49016497a246fb3c47"
+}
