@@ -13,7 +13,7 @@ use std::fmt;
 use std::num::{NonZeroU16, NonZeroUsize};
 use std::time::{Duration, SystemTime};
 
-use reqwest::header::{ACCEPT, CONTENT_LENGTH, PREFER, RETRY_AFTER};
+use reqwest::header::{ACCEPT, CONTENT_LENGTH, RETRY_AFTER};
 use reqwest::{Response, StatusCode};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -581,7 +581,7 @@ impl MicrosoftGraphMailClient {
             .header(ACCEPT, "application/json")
             .bearer_auth(access_token.expose_secret());
         if let Some(prefer) = prefer {
-            request = request.header(PREFER, prefer);
+            request = request.header("prefer", prefer);
         }
         request.send().await.map_err(transport_error)
     }
