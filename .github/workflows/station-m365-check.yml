@@ -6,6 +6,7 @@ on:
     branches:
       - station/m365-readonly
     paths:
+      - .sqlx/**
       - crates/**
       - services/authentication_service/**
       - services/email_service/**
@@ -91,6 +92,29 @@ jobs:
           unset SQLX_OFFLINE RUSTC_WRAPPER
           cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
 
+      - name: Generate workspace SQLx metadata on the disposable runner
+        run: |
+          set -euo pipefail
+          unset SQLX_OFFLINE RUSTC_WRAPPER
+          cp -a .sqlx "$RUNNER_TEMP/station-sqlx-before"
+          prepare_status=0
+          just prepare_db || prepare_status=$?
+          # Preserve unrelated cached queries rather than blanket-delete metadata.
+          cp -an "$RUNNER_TEMP/station-sqlx-before/." .sqlx/
+          git diff -- Cargo.lock > "$RUNNER_TEMP/station-m365-lock.diff"
+          git status --short -- .sqlx > "$RUNNER_TEMP/station-m365-sqlx-status.txt"
+          git ls-files --modified --others --exclude-standard -z .sqlx |
+            while IFS= read -r -d "" file; do
+              if test -f "$file"; then printf "%s\0" "$file"; fi
+            done | tar --null -T - -czf "$RUNNER_TEMP/station-m365-sqlx-source.tar.gz"
+          test "$prepare_status" -eq 0
+
+      - name: Verify native mailbox release checks with offline SQLx metadata
+        run: |
+          set -euo pipefail
+          unset RUSTC_WRAPPER
+          CARGO_TARGET_DIR="$RUNNER_TEMP/station-m365-offline-target" SQLX_OFFLINE=true cargo check --locked -p authentication_service -p email_service -p email_refresh_handler --features email_service/microsoft_graph_readonly
+
       - name: Upload resolved lockfile and metadata evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,6 +124,8 @@ jobs:
             Cargo.lock
             ${{ runner.temp }}/station-m365-metadata.json
             ${{ runner.temp }}/station-m365-lock.diff
+            ${{ runner.temp }}/station-m365-sqlx-status.txt
+            ${{ runner.temp }}/station-m365-sqlx-source.tar.gz
           if-no-files-found: warn
           retention-days: 7
 
