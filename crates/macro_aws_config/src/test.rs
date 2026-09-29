@@ -420,6 +420,9 @@ fn remote_aws_clears_generic_and_service_specific_endpoint_overrides() {
         Some("https://ambient-service-specific-endpoint.invalid"),
     ] {
         let mut builder = Builder::from(&shared_config);
+        // The default lazy identity cache needs a Tokio timer; this synchronous,
+        // no-network test uses static test credentials directly instead.
+        builder.set_identity_cache(aws_sdk_s3::config::IdentityCache::no_cache());
         if let Some(endpoint) = service_specific_override {
             // `Builder::from` materializes `AWS_ENDPOINT_URL_S3` into this same
             // service-level field before our override helper runs.
