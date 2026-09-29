@@ -76,6 +76,20 @@ use super::response::{
     DocumentResponseMetadataWithContent, GetDocumentResponseData, LocationResponseV3,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DocumentGetUrlProvider {
+    CloudFront,
+    DirectS3,
+}
+
+fn document_get_url_provider(custom_s3_configured: bool) -> DocumentGetUrlProvider {
+    if custom_s3_configured {
+        DocumentGetUrlProvider::DirectS3
+    } else {
+        DocumentGetUrlProvider::CloudFront
+    }
+}
+
 /// The concrete document service implementation.
 pub struct DocumentServiceImpl<
     R: DocumentRepo,
@@ -398,17 +412,43 @@ impl<
         )
     }
 
-    fn make_presigned_url(&self, key: &str) -> anyhow::Result<String> {
+    fn make_cloudfront_presigned_url(&self, key: &str) -> anyhow::Result<String> {
         let constructed_url = self.cloudfront_url_for_key(key);
         let options = self.get_signed_options();
 
-        let signed_url = if !macro_aws_config::is_local_aws() {
+        let signed_url = if !macro_aws_config::is_local_s3() {
             get_signed_url(&constructed_url, &options)?
         } else {
             constructed_url
         };
 
         Ok(signed_url)
+    }
+
+    async fn make_presigned_url_for_provider(
+        &self,
+        key: &str,
+        provider: DocumentGetUrlProvider,
+    ) -> anyhow::Result<String> {
+        match provider {
+            DocumentGetUrlProvider::CloudFront => self.make_cloudfront_presigned_url(key),
+            DocumentGetUrlProvider::DirectS3 => {
+                self.upload_url_service
+                    .get_document_presigned_url(
+                        key,
+                        self.cloudfront_config.presigned_url_expiry_seconds,
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn make_presigned_url(&self, key: &str) -> anyhow::Result<String> {
+        self.make_presigned_url_for_provider(
+            key,
+            document_get_url_provider(macro_aws_config::is_custom_s3_configured()),
+        )
+        .await
     }
 
     async fn get_editable_url(
@@ -431,7 +471,7 @@ impl<
         let document_key =
             build_cloud_storage_bucket_document_key(owner, document_id, document_version_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 
@@ -450,7 +490,7 @@ impl<
         let document_key =
             build_cloud_storage_bucket_document_key(owner, document_id, document_version_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 
@@ -461,7 +501,7 @@ impl<
     ) -> anyhow::Result<LocationResponseData> {
         let document_key = build_docx_to_pdf_converted_document_key(owner, document_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 
@@ -482,25 +522,45 @@ impl<
                 .map_err(Into::into)?
         };
 
-        let options = self.get_signed_options();
-        let distribution_url = &self.cloudfront_config.distribution_url;
-
-        let presigned_urls: Vec<PresignedUrl> = shas
-            .iter()
-            .filter_map(|sha| {
-                let constructed_url = format!("{}/{}", distribution_url, sha);
-                match get_signed_url(&constructed_url, &options) {
-                    Ok(url) => Some(PresignedUrl {
+        let provider =
+            document_get_url_provider(macro_aws_config::is_custom_s3_configured());
+        let presigned_urls: Vec<PresignedUrl> = match provider {
+            DocumentGetUrlProvider::DirectS3 => {
+                let mut presigned_urls = Vec::with_capacity(shas.len());
+                for sha in &shas {
+                    let url = self
+                        .make_presigned_url_for_provider(sha, DocumentGetUrlProvider::DirectS3)
+                        .await
+                        .inspect_err(|e| {
+                            tracing::error!(error=?e, sha=?sha, "unable to generate presigned url");
+                        })?;
+                    presigned_urls.push(PresignedUrl {
                         presigned_url: url,
                         sha: sha.to_string(),
-                    }),
-                    Err(e) => {
-                        tracing::error!(error=?e, sha=?sha, "unable to generate presigned url");
-                        None
-                    }
+                    });
                 }
-            })
-            .collect();
+                presigned_urls
+            }
+            DocumentGetUrlProvider::CloudFront => {
+                let options = self.get_signed_options();
+                let distribution_url = &self.cloudfront_config.distribution_url;
+                shas.iter()
+                    .filter_map(|sha| {
+                        let constructed_url = format!("{}/{}", distribution_url, sha);
+                        match get_signed_url(&constructed_url, &options) {
+                            Ok(url) => Some(PresignedUrl {
+                                presigned_url: url,
+                                sha: sha.to_string(),
+                            }),
+                            Err(e) => {
+                                tracing::error!(error=?e, sha=?sha, "unable to generate presigned url");
+                                None
+                            }
+                        }
+                    })
+                    .collect()
+            }
+        };
 
         if shas.len() != presigned_urls.len() {
             anyhow::bail!("unable to generate presigned urls");

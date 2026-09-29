@@ -1,0 +1,82 @@
+name: Station object storage checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - station/durable-storage
+    paths:
+      - infra/station-storage/**
+      - crates/macro_aws_config/**
+      - crates/documents/**
+      - crates/call/**
+      - services/document_storage_service/**
+      - services/static_file_service/**
+      - services/email_service/**
+      - services/document_upload_finalizer_handler/**
+      - .github/workflows/station-storage-check.yml
+      - .github/scripts/check-station-storage.sh
+      - Cargo.toml
+      - Cargo.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: station-storage-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storage:
+    name: Object-storage isolation and consumer checks
+    runs-on: monkci-ubuntu-24.04-8
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: '1'
+      SQLX_OFFLINE: 'true'
+    steps:
+      - name: Checkout exact storage branch commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify private infrastructure policy invariants
+        run: node --test infra/station-storage/test/template.test.mjs
+
+      - name: Set up repository Nix tools without private caches
+        uses: ./.github/actions/setup-nix
+
+      - name: Enter pinned repository development shell
+        uses: ./.github/actions/setup-nix-dev-shell
+
+      - name: Verify Rust formatting
+        run: |
+          if ! cargo fmt --all -- --check; then
+            cargo fmt --all
+            git diff --binary > "$RUNNER_TEMP/station-storage-rustfmt.patch"
+            exit 1
+          fi
+
+      - name: Test storage configuration and type-check consumers offline
+        run: bash .github/scripts/check-station-storage.sh
+
+      - name: Upload exact-commit check evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: station-storage-check-evidence
+          path: |
+            ${{ runner.temp }}/station-storage-rustfmt.patch
+            ${{ runner.temp }}/station-storage-provenance.json
+            ${{ runner.temp }}/station-storage-config-tests.log
+            ${{ runner.temp }}/station-storage-consumers.log
+            ${{ runner.temp }}/station-storage-consumer-tests.log
+            ${{ runner.temp }}/station-storage-lock.diff
+          if-no-files-found: warn
+          retention-days: 14

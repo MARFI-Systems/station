@@ -19,6 +19,20 @@ pub struct GetAttachmentResponse {
     pub attachment: attachment::Attachment,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttachmentGetUrlProvider {
+    CloudFront,
+    DirectS3,
+}
+
+fn attachment_get_url_provider(custom_s3_configured: bool) -> AttachmentGetUrlProvider {
+    if custom_s3_configured {
+        AttachmentGetUrlProvider::DirectS3
+    } else {
+        AttachmentGetUrlProvider::CloudFront
+    }
+}
+
 /// Get an attachment by ID.
 #[utoipa::path(
     get,
@@ -131,7 +145,7 @@ pub async fn handler(
                 )
                     .into_response()
             })?;
-        presigned_request.to_string()
+        presigned_request
     } else {
         // Object doesn't exist, need to fetch it from the owning inbox and upload it.
         let provider_attachment_id = db_attachment.provider_id.as_ref().ok_or_else(|| {
@@ -248,12 +262,10 @@ pub async fn upload_single_attachment(
                     )
                 })?;
 
-            let url_string = presigned_url.to_string();
-
             // Update the attachment with the presigned URL
-            attachment.data_url = Some(url_string.clone());
+            attachment.data_url = Some(presigned_url.clone());
 
-            Ok(url_string)
+            Ok(presigned_url)
         }
         Err(e) => {
             // Log error with detailed context
@@ -271,10 +283,23 @@ pub async fn upload_single_attachment(
     }
 }
 
-// get a presigned cloudfront url for the attachment
+// Get a provider-appropriate presigned URL for the attachment.
 async fn get_presigned_url(state: &ApiContext, key: &str) -> anyhow::Result<String> {
-    let encoded_key = urlencoding::encode(key);
     let presigned_url_expiry_secs = state.config.email_service_presigned_url_ttl_secs;
+    if attachment_get_url_provider(macro_aws_config::is_custom_s3_configured())
+        == AttachmentGetUrlProvider::DirectS3
+    {
+        let presigned = state
+            .s3_client
+            .get_presigned_url(
+                &state.config.attachment_bucket.to_string(),
+                key,
+                presigned_url_expiry_secs,
+            )
+            .await?;
+        return Ok(macro_aws_config::transform_aws_url(presigned.uri()));
+    }
+
     let public_key_id = state
         .config
         .email_service_cloudfront_signer_public_key_id
@@ -301,10 +326,14 @@ async fn get_presigned_url(state: &ApiContext, key: &str) -> anyhow::Result<Stri
         ..Default::default()
     };
 
-    let constructed_url = format!("{}/{}", url, encoded_key);
+    let constructed_url = cloudfront_attachment_url(&url, key);
 
     let signed_url = get_signed_url(&constructed_url, &signed_options)?;
     Ok(signed_url)
+}
+
+fn cloudfront_attachment_url(distribution_url: &str, key: &str) -> String {
+    format!("{}/{}", distribution_url, urlencoding::encode(key))
 }
 
 #[macro_export]
@@ -317,4 +346,32 @@ macro_rules! generate_temp_attachment_s3_key {
             $filename.clone().unwrap_or_default()
         )
     };
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn attachment_get_provider_is_opt_in_and_defaults_to_cloudfront() {
+        assert_eq!(
+            attachment_get_url_provider(false),
+            AttachmentGetUrlProvider::CloudFront
+        );
+        assert_eq!(
+            attachment_get_url_provider(true),
+            AttachmentGetUrlProvider::DirectS3
+        );
+    }
+
+    #[test]
+    fn legacy_cloudfront_attachment_url_keeps_whole_key_encoding() {
+        assert_eq!(
+            cloudfront_attachment_url(
+                "https://attachments.example.test",
+                "temp/link id/file name?#%.pdf",
+            ),
+            "https://attachments.example.test/temp%2Flink%20id%2Ffile%20name%3F%23%25.pdf"
+        );
+    }
 }

@@ -18,7 +18,8 @@ pub struct RecordingCloudFrontConfig {
     pub presigned_url_expiry_seconds: u64,
 }
 
-/// S3-backed recording storage that serves production GETs through CloudFront.
+/// S3-backed recording storage that defaults to CloudFront GETs and can opt in
+/// to direct S3-compatible presigned GETs.
 pub struct S3RecordingStorage {
     client: aws_sdk_s3::Client,
     bucket: String,
@@ -68,6 +69,10 @@ fn preview_object_key(preview_key: &str) -> &str {
     preview_key
 }
 
+fn use_direct_s3_get(custom_s3_configured: bool, local_s3: bool) -> bool {
+    custom_s3_configured || local_s3
+}
+
 fn encode_object_key(object_key: &str) -> String {
     object_key
         .split('/')
@@ -110,7 +115,10 @@ fn cloudfront_signed_url(
 impl RecordingStorage for S3RecordingStorage {
     async fn presign_recording_url(&self, recording_key: &str) -> anyhow::Result<String> {
         let object_key = recording_object_key(recording_key);
-        if macro_aws_config::is_local_aws() {
+        if use_direct_s3_get(
+            macro_aws_config::is_custom_s3_configured(),
+            macro_aws_config::is_local_s3(),
+        ) {
             self.presign_s3_url(&object_key).await
         } else {
             self.presign_get_url(&object_key)
@@ -119,7 +127,10 @@ impl RecordingStorage for S3RecordingStorage {
 
     async fn presign_recording_preview_url(&self, preview_key: &str) -> anyhow::Result<String> {
         let object_key = preview_object_key(preview_key);
-        if macro_aws_config::is_local_aws() {
+        if use_direct_s3_get(
+            macro_aws_config::is_custom_s3_configured(),
+            macro_aws_config::is_local_s3(),
+        ) {
             self.presign_s3_url(object_key).await
         } else {
             self.presign_get_url(object_key)

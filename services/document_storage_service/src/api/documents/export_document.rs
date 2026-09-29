@@ -44,6 +44,20 @@ pub struct ExportDocumentResponse {
     pub presigned_url: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DocxExportGetUrlProvider {
+    CloudFront,
+    DirectS3,
+}
+
+fn docx_export_get_url_provider(custom_s3_configured: bool) -> DocxExportGetUrlProvider {
+    if custom_s3_configured {
+        DocxExportGetUrlProvider::DirectS3
+    } else {
+        DocxExportGetUrlProvider::CloudFront
+    }
+}
+
 /// Generates a presigned url to download the raw content of the document
 /// For files with modification layers, they will not be applied in the downloaded file.
 #[utoipa::path(
@@ -199,29 +213,75 @@ async fn export_docx_document(state: &ApiContext, document_id: &str) -> anyhow::
     sign_docx_url(state, &docx_key).await
 }
 
+fn docx_export_key(provider: DocxExportGetUrlProvider, key: &str) -> String {
+    match provider {
+        DocxExportGetUrlProvider::CloudFront => urlencoding::encode(key).into_owned(),
+        DocxExportGetUrlProvider::DirectS3 => key.to_owned(),
+    }
+}
+
 async fn sign_docx_url(state: &ApiContext, key: &str) -> anyhow::Result<String> {
-    let encoded_key = urlencoding::encode(key);
+    let expiry_seconds = state
+        .config
+        .document_storage_service_presigned_url_expiry_seconds;
+    let provider = docx_export_get_url_provider(macro_aws_config::is_custom_s3_configured());
+    let provider_key = docx_export_key(provider, key);
+    match provider {
+        DocxExportGetUrlProvider::DirectS3 => {
+            state
+                .s3_client
+                .get_document_presigned_url(&provider_key, expiry_seconds)
+                .await
+        }
+        DocxExportGetUrlProvider::CloudFront => {
+            let signed_options = get_cloudfront_signed_options(
+                &state
+                    .config
+                    .document_storage_service_cloudfront_signer_public_key_id,
+                state
+                    .config
+                    .document_storage_service_cloudfront_signer_private_key
+                    .as_ref(),
+                expiry_seconds,
+            );
 
-    let signed_options = get_cloudfront_signed_options(
-        &state
-            .config
-            .document_storage_service_cloudfront_signer_public_key_id,
-        state
-            .config
-            .document_storage_service_cloudfront_signer_private_key
-            .as_ref(),
-        state
-            .config
-            .document_storage_service_presigned_url_expiry_seconds,
-    );
+            get_presigned_url(
+                &state
+                    .config
+                    .document_storage_service_cloudfront_distribution_url,
+                &provider_key,
+                &signed_options,
+            )
+        }
+    }
+}
 
-    let signed_url = get_presigned_url(
-        &state
-            .config
-            .document_storage_service_cloudfront_distribution_url,
-        &encoded_key,
-        &signed_options,
-    )?;
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    Ok(signed_url)
+    #[test]
+    fn reconstructed_docx_export_defaults_to_cloudfront_and_requires_explicit_s3() {
+        assert_eq!(
+            docx_export_get_url_provider(false),
+            DocxExportGetUrlProvider::CloudFront
+        );
+        assert_eq!(
+            docx_export_get_url_provider(true),
+            DocxExportGetUrlProvider::DirectS3
+        );
+    }
+
+    #[test]
+    fn reconstructed_docx_key_handling_is_provider_specific() {
+        let key = "temp/doc id/a?#%.docx";
+        assert_eq!(
+            docx_export_key(DocxExportGetUrlProvider::CloudFront, key),
+            "temp%2Fdoc%20id%2Fa%3F%23%25.docx"
+        );
+        assert_eq!(
+            docx_export_key(DocxExportGetUrlProvider::DirectS3, key),
+            key
+        );
+    }
 }

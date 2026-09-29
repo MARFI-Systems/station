@@ -3,7 +3,10 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use aws_sdk_s3::{presigning::PresigningConfig, primitives::ByteStream};
+use aws_sdk_s3::{
+    presigning::{PresignedRequest, PresigningConfig},
+    primitives::ByteStream,
+};
 use base64::Engine;
 use model::document::ContentType;
 use s3_key::{SYNC_SERVICE_SNAPSHOT_PREFIX, document_key_url_path};
@@ -12,6 +15,10 @@ use crate::domain::ports::PresignedUploadUrlPort;
 
 fn snapshot_key(document_id: &str) -> String {
     format!("{SYNC_SERVICE_SNAPSHOT_PREFIX}/{document_id}")
+}
+
+fn skip_s3_write(local_s3: bool) -> bool {
+    local_s3
 }
 
 /// Adapter implementing [`PresignedUploadUrlPort`] backed by an `aws_sdk_s3::Client`.
@@ -72,8 +79,23 @@ impl PresignedUploadUrlPort for S3UploadUrlAdapter {
     }
 
     #[tracing::instrument(skip(self), err)]
+    async fn get_document_presigned_url(
+        &self,
+        key: &str,
+        expiry_seconds: u64,
+    ) -> anyhow::Result<String> {
+        get_presigned_url(
+            &self.client,
+            &self.document_storage_bucket,
+            key,
+            expiry_seconds,
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self), err)]
     async fn copy_object(&self, source_key: &str, destination_key: &str) -> anyhow::Result<()> {
-        if macro_aws_config::is_local_aws() {
+        if skip_s3_write(macro_aws_config::is_local_s3()) {
             return Ok(());
         }
 
@@ -123,7 +145,7 @@ impl PresignedUploadUrlPort for S3UploadUrlAdapter {
 
     #[tracing::instrument(skip(self, bytes), err)]
     async fn upload_snapshot(&self, document_id: &str, bytes: Vec<u8>) -> anyhow::Result<()> {
-        if macro_aws_config::is_local_aws() {
+        if skip_s3_write(macro_aws_config::is_local_s3()) {
             return Ok(());
         }
 
@@ -139,6 +161,32 @@ impl PresignedUploadUrlPort for S3UploadUrlAdapter {
 
         Ok(())
     }
+}
+
+async fn presign_get_request(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    expiry_seconds: u64,
+) -> anyhow::Result<PresignedRequest> {
+    Ok(client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .presigned(PresigningConfig::expires_in(Duration::from_secs(
+            expiry_seconds,
+        ))?)
+        .await?)
+}
+
+async fn get_presigned_url(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    expiry_seconds: u64,
+) -> anyhow::Result<String> {
+    let presigned_url = presign_get_request(client, bucket, key, expiry_seconds).await?;
+    Ok(macro_aws_config::transform_aws_url(presigned_url.uri()))
 }
 
 async fn put_presigned_url(
@@ -165,4 +213,39 @@ async fn put_presigned_url(
         .await?;
 
     Ok(macro_aws_config::transform_aws_url(presigned_url.uri()))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn s3_writes_are_skipped_only_when_s3_itself_is_local() {
+        assert!(!skip_s3_write(false));
+        assert!(skip_s3_write(true));
+    }
+
+    #[tokio::test]
+    async fn direct_get_presigning_passes_the_raw_object_key_to_the_sdk() {
+        let sdk_config = macro_aws_config::local_aws_config("http://localhost:4566").await;
+        let s3_config = aws_sdk_s3::config::Builder::from(&sdk_config)
+            .force_path_style(true)
+            .build();
+        let client = aws_sdk_s3::Client::from_conf(s3_config);
+
+        let presigned = presign_get_request(
+            &client,
+            "documents",
+            "macro|owner@user.com/folder name/a?#%.txt",
+            60,
+        )
+        .await
+        .unwrap();
+
+        let uri = presigned.uri();
+        assert!(uri.contains(
+            "/documents/macro%7Cowner%40user.com/folder%20name/a%3F%23%25.txt?"
+        ));
+        assert!(!uri.contains("%257C"));
+    }
 }

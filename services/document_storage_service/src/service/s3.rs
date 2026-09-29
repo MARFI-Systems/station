@@ -78,6 +78,20 @@ impl S3Client {
         .await
     }
 
+    pub async fn get_document_presigned_url(
+        &self,
+        key: &str,
+        expiry_seconds: u64,
+    ) -> anyhow::Result<String> {
+        internal_presigned_helpers::get_document_presigned_url(
+            &self.inner,
+            &self.document_storage_bucket,
+            key,
+            expiry_seconds,
+        )
+        .await
+    }
+
     pub async fn put_snapshot_presigned_url(&self, key: &str) -> anyhow::Result<String> {
         internal_presigned_helpers::put_internal_presigned_url(
             &self.inner,

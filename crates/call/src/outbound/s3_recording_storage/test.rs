@@ -85,6 +85,14 @@ fn malformed_distribution_url_is_rejected() {
 }
 
 #[test]
+fn direct_s3_get_is_used_only_for_custom_or_local_s3() {
+    assert!(!use_direct_s3_get(false, false));
+    assert!(use_direct_s3_get(true, false));
+    assert!(use_direct_s3_get(false, true));
+    assert!(use_direct_s3_get(true, true));
+}
+
+#[test]
 fn recording_object_key_adds_calls_prefix() {
     assert_eq!(
         recording_object_key("room/recording.mp4"),

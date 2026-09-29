@@ -44,11 +44,38 @@ pub(in crate::service::s3) async fn get_presigned_url(
     if cfg!(feature = "local") {
         return Ok("fake".to_string());
     }
+    get_presigned_url_with_expiry(client, bucket, key, EXPIRY).await
+}
+
+/// Generates a browser-facing presigned GET URL for a document object using
+/// the configured request lifetime. The raw object key is passed to the SDK so
+/// its signer owns path encoding.
+pub(in crate::service::s3) async fn get_document_presigned_url(
+    client: &s3::Client,
+    bucket: &str,
+    key: &str,
+    expiry_seconds: u64,
+) -> anyhow::Result<String> {
+    get_presigned_url_with_expiry(
+        client,
+        bucket,
+        key,
+        Duration::from_secs(expiry_seconds),
+    )
+    .await
+}
+
+async fn get_presigned_url_with_expiry(
+    client: &s3::Client,
+    bucket: &str,
+    key: &str,
+    expiry: Duration,
+) -> anyhow::Result<String> {
     let presigned = client
         .get_object()
         .bucket(bucket)
         .key(key)
-        .presigned(PresigningConfig::expires_in(EXPIRY)?)
+        .presigned(PresigningConfig::expires_in(expiry)?)
         .await?;
     Ok(macro_aws_config::transform_aws_url(presigned.uri()))
 }

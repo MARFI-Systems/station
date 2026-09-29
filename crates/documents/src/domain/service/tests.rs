@@ -135,6 +135,14 @@ impl PresignedUploadUrlPort for TestUploadUrlPort {
         Ok(String::new())
     }
 
+    async fn get_document_presigned_url(
+        &self,
+        key: &str,
+        expiry_seconds: u64,
+    ) -> anyhow::Result<String> {
+        Ok(format!("https://s3.example.test/{key}?expires={expiry_seconds}"))
+    }
+
     async fn copy_object(&self, _source_key: &str, _destination_key: &str) -> anyhow::Result<()> {
         Ok(())
     }
@@ -2889,6 +2897,31 @@ fn spreadsheet_uploads_are_rejected_instead_of_discarding_their_bytes() {
             .is_ok()
     );
     assert!(validate_spreadsheet_creation(Some(FileType::Csv), "uploaded-csv-sha").is_ok());
+}
+
+#[test]
+fn document_get_provider_is_opt_in_and_defaults_to_cloudfront() {
+    assert_eq!(
+        document_get_url_provider(false),
+        DocumentGetUrlProvider::CloudFront
+    );
+    assert_eq!(
+        document_get_url_provider(true),
+        DocumentGetUrlProvider::DirectS3
+    );
+}
+
+#[tokio::test]
+async fn direct_s3_document_get_keeps_the_raw_object_key_and_configured_expiry() {
+    let service = make_test_service(make_mock_repo());
+    let key = "macro|owner@user.com/folder name/a?#%.txt";
+
+    let url = service
+        .make_presigned_url_for_provider(key, DocumentGetUrlProvider::DirectS3)
+        .await
+        .unwrap();
+
+    assert_eq!(url, format!("https://s3.example.test/{key}?expires=60"));
 }
 
 #[test]

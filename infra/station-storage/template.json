@@ -1,0 +1,2004 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Station storage foundation (bounded scope): private-by-default S3 buckets for documents, static assets, email attachments, DOCX staging, and upload staging, plus an optional generic encrypted Station backup destination bucket (default disabled) for a separate backup identity/process, S3-to-SQS event notification plumbing for documents/static, and the static-file metadata DynamoDB table. NOT a deployment: no provisioning, no live AWS calls, no attachment to existing IAM roles, no automatic backup copy job or schedule.",
+  "Parameters": {
+    "Environment": {
+      "Type": "String",
+      "AllowedValues": [
+        "dev",
+        "staging",
+        "prod"
+      ],
+      "Default": "dev",
+      "Description": "Deployment environment tag applied to all resources. Purely descriptive; does not change resource behavior."
+    },
+    "StationOriginUrl": {
+      "Type": "String",
+      "AllowedPattern": "^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$",
+      "ConstraintDescription": "Must be an https:// origin: scheme plus host and optional port only, no path and no trailing slash.",
+      "Description": "The single Station web origin allowed by CORS on buckets that accept direct browser uploads (documents, static, upload staging). Must be validated HTTPS."
+    },
+    "DocumentsBucketName": {
+      "Type": "String",
+      "Description": "Exact name of the durable documents bucket (plugged in by the operator; not generated here).",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only, starting and ending with a letter or digit.",
+      "MinLength": 3,
+      "MaxLength": 63
+    },
+    "StaticBucketName": {
+      "Type": "String",
+      "Description": "Exact name of the durable static-assets bucket.",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only, starting and ending with a letter or digit.",
+      "MinLength": 3,
+      "MaxLength": 63
+    },
+    "EmailAttachmentsBucketName": {
+      "Type": "String",
+      "Description": "Exact name of the email attachments bucket.",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only, starting and ending with a letter or digit.",
+      "MinLength": 3,
+      "MaxLength": 63
+    },
+    "DocxStagingBucketName": {
+      "Type": "String",
+      "Description": "Exact name of the transient DOCX-unzip staging bucket.",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only, starting and ending with a letter or digit.",
+      "MinLength": 3,
+      "MaxLength": 63
+    },
+    "UploadStagingBucketName": {
+      "Type": "String",
+      "Description": "Exact name of the transient bulk/client upload staging bucket.",
+      "AllowedPattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only, starting and ending with a letter or digit.",
+      "MinLength": 3,
+      "MaxLength": 63
+    },
+    "EnableBackupBucket": {
+      "Type": "String",
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
+      "Default": "false",
+      "Description": "Whether to create a distinct, generic encrypted Station backup destination bucket for a separate backup identity/process to write into. Defaults to false until a backup provider and copy/export mechanism are approved; this template only provisions the destination and isolated writer/restore IAM policies, never an automatic copy job or schedule."
+    },
+    "BackupBucketName": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Exact name of the distinct backup bucket for documents. Required only when EnableBackupBucket is true.",
+      "AllowedPattern": "^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+      "ConstraintDescription": "Must be empty (when backup is disabled) or a valid S3 bucket name: 3-63 characters, lowercase letters, digits, dots, and hyphens only.",
+      "MaxLength": 63
+    },
+    "StaticMetadataTableName": {
+      "Type": "String",
+      "Description": "Exact name of the static-file metadata DynamoDB table (schema mirrors services/static_file_service/src/service/dynamodb/model.rs).",
+      "AllowedPattern": "^[a-zA-Z0-9_.-]{3,255}$",
+      "ConstraintDescription": "Must be a valid DynamoDB table name: 3-255 characters, letters, digits, underscores, hyphens, and dots only.",
+      "MinLength": 3,
+      "MaxLength": 255
+    },
+    "DocumentsQueueName": {
+      "Type": "String",
+      "Description": "Exact name of the SQS queue receiving S3 ObjectCreated notifications from the documents bucket.",
+      "AllowedPattern": "^[A-Za-z0-9_-]{1,80}$",
+      "ConstraintDescription": "Must be a valid SQS queue name: 1-80 characters, letters, digits, hyphens, and underscores only.",
+      "MinLength": 1,
+      "MaxLength": 80
+    },
+    "DocumentsDlqName": {
+      "Type": "String",
+      "Description": "Exact name of the dead-letter queue for the documents notification queue.",
+      "AllowedPattern": "^[A-Za-z0-9_-]{1,80}$",
+      "ConstraintDescription": "Must be a valid SQS queue name: 1-80 characters, letters, digits, hyphens, and underscores only.",
+      "MinLength": 1,
+      "MaxLength": 80
+    },
+    "StaticQueueName": {
+      "Type": "String",
+      "Description": "Exact name of the SQS queue receiving S3 ObjectCreated notifications from the static bucket.",
+      "AllowedPattern": "^[A-Za-z0-9_-]{1,80}$",
+      "ConstraintDescription": "Must be a valid SQS queue name: 1-80 characters, letters, digits, hyphens, and underscores only.",
+      "MinLength": 1,
+      "MaxLength": 80
+    },
+    "StaticDlqName": {
+      "Type": "String",
+      "Description": "Exact name of the dead-letter queue for the static notification queue.",
+      "AllowedPattern": "^[A-Za-z0-9_-]{1,80}$",
+      "ConstraintDescription": "Must be a valid SQS queue name: 1-80 characters, letters, digits, hyphens, and underscores only.",
+      "MinLength": 1,
+      "MaxLength": 80
+    },
+    "DocumentsNoncurrentVersionExpirationDays": {
+      "Type": "Number",
+      "Default": 30,
+      "MinValue": 1,
+      "Description": "Conservative retention for superseded versions in the documents bucket before permanent deletion."
+    },
+    "StaticNoncurrentVersionExpirationDays": {
+      "Type": "Number",
+      "Default": 7,
+      "MinValue": 1,
+      "Description": "Conservative retention for superseded versions in the static bucket before permanent deletion."
+    },
+    "BackupNoncurrentVersionExpirationDays": {
+      "Type": "Number",
+      "Default": 90,
+      "MinValue": 1,
+      "Description": "Longer retention window for superseded versions in the backup bucket, since it exists specifically to outlive mistakes in the primary documents bucket."
+    },
+    "StagingObjectExpirationDays": {
+      "Type": "Number",
+      "Default": 7,
+      "MinValue": 1,
+      "Description": "Conservative TTL for all objects in the DOCX-staging and upload-staging buckets (both are transient by design)."
+    },
+    "EmailAttachmentsTempPrefixExpirationDays": {
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 1,
+      "Description": "TTL for the temp/ prefix in the email attachments bucket (mirrors existing repo convention)."
+    },
+    "AbortIncompleteMultipartUploadDays": {
+      "Type": "Number",
+      "Default": 7,
+      "MinValue": 1,
+      "Description": "Days before an incomplete multipart upload is aborted and its parts reclaimed, applied to every bucket."
+    },
+    "QueueVisibilityTimeoutSeconds": {
+      "Type": "Number",
+      "Default": 300,
+      "MinValue": 0,
+      "Description": "Visibility timeout for the documents/static notification queues, sized for downstream finalizer/consumer processing time.",
+      "MaxValue": 43200
+    },
+    "QueueMessageRetentionSeconds": {
+      "Type": "Number",
+      "Default": 345600,
+      "MinValue": 60,
+      "Description": "Message retention for the main notification queues (default 4 days).",
+      "MaxValue": 1209600
+    },
+    "DlqMessageRetentionSeconds": {
+      "Type": "Number",
+      "Default": 1209600,
+      "MinValue": 60,
+      "Description": "Message retention for dead-letter queues (default 14 days, matching existing repo DLQ convention).",
+      "MaxValue": 1209600
+    },
+    "MaxReceiveCount": {
+      "Type": "Number",
+      "Default": 5,
+      "MinValue": 1,
+      "Description": "Number of delivery attempts before a message moves to its DLQ.",
+      "MaxValue": 1000
+    },
+    "EmailAttachmentsNoncurrentVersionExpirationDays": {
+      "Type": "Number",
+      "Default": 14,
+      "MinValue": 1,
+      "Description": "Conservative retention for superseded versions in the email attachments bucket before permanent deletion. Versioning is enabled explicitly so the temp/ prefix TTL is not the only recovery mechanism for accidental overwrite/delete."
+    }
+  },
+  "Rules": {
+    "BackupBucketNameRequiredWhenEnabled": {
+      "RuleCondition": {
+        "Fn::Equals": [
+          {
+            "Ref": "EnableBackupBucket"
+          },
+          "true"
+        ]
+      },
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Equals": [
+                  {
+                    "Ref": "BackupBucketName"
+                  },
+                  ""
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "BackupBucketName must be a non-empty, valid S3 bucket name when EnableBackupBucket is true."
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "CreateBackupBucket": {
+      "Fn::Equals": [
+        {
+          "Ref": "EnableBackupBucket"
+        },
+        "true"
+      ]
+    }
+  },
+  "Resources": {
+    "DocumentsAppAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege object access for the documents bucket only. Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectAttributes",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "DocumentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "DocumentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "StaticAppAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege object access for the static bucket plus scoped read/write on the static-file metadata table and its GSI. Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectAttributes",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "StaticBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "StaticBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem"
+              ],
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StaticMetadataTable",
+                    "Arn"
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "${TableArn}/index/*",
+                    {
+                      "TableArn": {
+                        "Fn::GetAtt": [
+                          "StaticMetadataTable",
+                          "Arn"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "EmailAttachmentsAppAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege object access for the email attachments bucket only. Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "EmailAttachmentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "EmailAttachmentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "DocxStagingAppAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege object access for the DOCX staging bucket only (unzip pipeline). Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "DocxStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "DocxStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "UploadStagingAppAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege object access for the upload staging bucket only. Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:GetObjectAttributes",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "UploadStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "UploadStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "NotificationQueueConsumerPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "Description": "Least-privilege consumer access to the documents/static notification queues (not their DLQs). Not attached to any role by this template.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:ChangeMessageVisibility"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${QueueName}",
+                    {
+                      "QueueName": {
+                        "Ref": "DocumentsQueueName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:${QueueName}",
+                    {
+                      "QueueName": {
+                        "Ref": "StaticQueueName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "DocumentsDlq": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {
+          "Ref": "DocumentsDlqName"
+        },
+        "MessageRetentionPeriod": {
+          "Ref": "DlqMessageRetentionSeconds"
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "documents-dlq"
+          }
+        ]
+      }
+    },
+    "DocumentsQueue": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {
+          "Ref": "DocumentsQueueName"
+        },
+        "VisibilityTimeout": {
+          "Ref": "QueueVisibilityTimeoutSeconds"
+        },
+        "MessageRetentionPeriod": {
+          "Ref": "QueueMessageRetentionSeconds"
+        },
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "SqsManagedSseEnabled": true,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "DocumentsDlq",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": {
+            "Ref": "MaxReceiveCount"
+          }
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "documents-notifications"
+          }
+        ]
+      }
+    },
+    "DocumentsQueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [
+          {
+            "Ref": "DocumentsQueue"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowS3ObjectCreatedFromDocumentsBucket",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "sqs:SendMessage",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "DocumentsQueue",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": [
+                      "arn:${AWS::Partition}:s3:::${BucketName}",
+                      {
+                        "BucketName": {
+                          "Ref": "DocumentsBucketName"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StaticDlq": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {
+          "Ref": "StaticDlqName"
+        },
+        "MessageRetentionPeriod": {
+          "Ref": "DlqMessageRetentionSeconds"
+        },
+        "SqsManagedSseEnabled": true,
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "static-dlq"
+          }
+        ]
+      }
+    },
+    "StaticQueue": {
+      "Type": "AWS::SQS::Queue",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "QueueName": {
+          "Ref": "StaticQueueName"
+        },
+        "VisibilityTimeout": {
+          "Ref": "QueueVisibilityTimeoutSeconds"
+        },
+        "MessageRetentionPeriod": {
+          "Ref": "QueueMessageRetentionSeconds"
+        },
+        "ReceiveMessageWaitTimeSeconds": 20,
+        "SqsManagedSseEnabled": true,
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "StaticDlq",
+              "Arn"
+            ]
+          },
+          "maxReceiveCount": {
+            "Ref": "MaxReceiveCount"
+          }
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "static-notifications"
+          }
+        ]
+      }
+    },
+    "StaticQueuePolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [
+          {
+            "Ref": "StaticQueue"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowS3ObjectCreatedFromStaticBucket",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "sqs:SendMessage",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "StaticQueue",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": [
+                      "arn:${AWS::Partition}:s3:::${BucketName}",
+                      {
+                        "BucketName": {
+                          "Ref": "StaticBucketName"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DocumentsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "DependsOn": [
+        "DocumentsQueuePolicy"
+      ],
+      "Properties": {
+        "BucketName": {
+          "Ref": "DocumentsBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "PUT"
+              ],
+              "AllowedOrigins": [
+                {
+                  "Ref": "StationOriginUrl"
+                }
+              ],
+              "ExposedHeaders": [
+                "ETag"
+              ],
+              "MaxAge": 3000
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "noncurrent-version-expiration",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": {
+                  "Ref": "DocumentsNoncurrentVersionExpirationDays"
+                }
+              }
+            },
+            {
+              "Id": "expired-delete-marker-cleanup",
+              "Status": "Enabled",
+              "ExpiredObjectDeleteMarker": true
+            }
+          ]
+        },
+        "NotificationConfiguration": {
+          "QueueConfigurations": [
+            {
+              "Event": "s3:ObjectCreated:*",
+              "Queue": {
+                "Fn::GetAtt": [
+                  "DocumentsQueue",
+                  "Arn"
+                ]
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "documents"
+          }
+        ]
+      }
+    },
+    "DocumentsBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "DocumentsBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "DocumentsBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "DocumentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StaticBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "DependsOn": [
+        "StaticQueuePolicy"
+      ],
+      "Properties": {
+        "BucketName": {
+          "Ref": "StaticBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "GET",
+                "PUT",
+                "POST",
+                "DELETE",
+                "HEAD"
+              ],
+              "AllowedOrigins": [
+                {
+                  "Ref": "StationOriginUrl"
+                }
+              ],
+              "ExposedHeaders": [
+                "ETag"
+              ],
+              "MaxAge": 3000
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "noncurrent-version-expiration",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": {
+                  "Ref": "StaticNoncurrentVersionExpirationDays"
+                }
+              }
+            },
+            {
+              "Id": "expired-delete-marker-cleanup",
+              "Status": "Enabled",
+              "ExpiredObjectDeleteMarker": true
+            }
+          ]
+        },
+        "NotificationConfiguration": {
+          "QueueConfigurations": [
+            {
+              "Event": "s3:ObjectCreated:*",
+              "Queue": {
+                "Fn::GetAtt": [
+                  "StaticQueue",
+                  "Arn"
+                ]
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "static"
+          }
+        ]
+      }
+    },
+    "StaticBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "StaticBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "StaticBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "StaticBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "EmailAttachmentsBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "EmailAttachmentsBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "temp-prefix-expiration",
+              "Status": "Enabled",
+              "Prefix": "temp/",
+              "ExpirationInDays": {
+                "Ref": "EmailAttachmentsTempPrefixExpirationDays"
+              }
+            },
+            {
+              "Id": "noncurrent-version-expiration",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": {
+                  "Ref": "EmailAttachmentsNoncurrentVersionExpirationDays"
+                }
+              }
+            },
+            {
+              "Id": "expired-delete-marker-cleanup",
+              "Status": "Enabled",
+              "ExpiredObjectDeleteMarker": true
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "email-attachments"
+          }
+        ],
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "PUT"
+              ],
+              "AllowedOrigins": [
+                {
+                  "Ref": "StationOriginUrl"
+                }
+              ],
+              "ExposedHeaders": [
+                "ETag"
+              ],
+              "MaxAge": 3000
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        }
+      }
+    },
+    "EmailAttachmentsBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "EmailAttachmentsBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "EmailAttachmentsBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "EmailAttachmentsBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "DocxStagingBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "DocxStagingBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "staging-object-expiration",
+              "Status": "Enabled",
+              "ExpirationInDays": {
+                "Ref": "StagingObjectExpirationDays"
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "docx-staging"
+          }
+        ],
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "PUT"
+              ],
+              "AllowedOrigins": [
+                {
+                  "Ref": "StationOriginUrl"
+                }
+              ],
+              "ExposedHeaders": [
+                "ETag"
+              ],
+              "MaxAge": 3000
+            }
+          ]
+        }
+      }
+    },
+    "DocxStagingBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "DocxStagingBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "DocxStagingBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "DocxStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "UploadStagingBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "UploadStagingBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "*"
+              ],
+              "AllowedMethods": [
+                "PUT"
+              ],
+              "AllowedOrigins": [
+                {
+                  "Ref": "StationOriginUrl"
+                }
+              ],
+              "ExposedHeaders": [
+                "ETag"
+              ],
+              "MaxAge": 3000
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "staging-object-expiration",
+              "Status": "Enabled",
+              "ExpirationInDays": {
+                "Ref": "StagingObjectExpirationDays"
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "upload-staging"
+          }
+        ]
+      }
+    },
+    "UploadStagingBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "UploadStagingBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "UploadStagingBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "UploadStagingBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "BackupBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Condition": "CreateBackupBucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "BackupBucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "abort-incomplete-multipart",
+              "Status": "Enabled",
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": {
+                  "Ref": "AbortIncompleteMultipartUploadDays"
+                }
+              }
+            },
+            {
+              "Id": "noncurrent-version-expiration",
+              "Status": "Enabled",
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": {
+                  "Ref": "BackupNoncurrentVersionExpirationDays"
+                }
+              }
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "station-backup-destination"
+          }
+        ]
+      }
+    },
+    "BackupBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Condition": "CreateBackupBucket",
+      "Properties": {
+        "Bucket": {
+          "Ref": "BackupBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StaticMetadataTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "TableName": {
+          "Ref": "StaticMetadataTableName"
+        },
+        "BillingMode": "PAY_PER_REQUEST",
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "file_id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "owner_id",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "file_id",
+            "KeyType": "HASH"
+          }
+        ],
+        "GlobalSecondaryIndexes": [
+          {
+            "IndexName": "owner-index",
+            "KeySchema": [
+              {
+                "AttributeName": "owner_id",
+                "KeyType": "HASH"
+              }
+            ],
+            "Projection": {
+              "ProjectionType": "ALL"
+            }
+          }
+        ],
+        "PointInTimeRecoverySpecification": {
+          "PointInTimeRecoveryEnabled": true
+        },
+        "SSESpecification": {
+          "SSEEnabled": true
+        },
+        "Tags": [
+          {
+            "Key": "environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          },
+          {
+            "Key": "role",
+            "Value": "static-file-metadata"
+          }
+        ]
+      }
+    },
+    "BackupWriterAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Condition": "CreateBackupBucket",
+      "Properties": {
+        "Description": "Write-only (no delete) access to the Station backup destination bucket, intended for a separate backup-writer identity only. Not attached to any role by this template, and never referenced by any app-facing access policy.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "BackupRestoreAccessPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Condition": "CreateBackupBucket",
+      "Properties": {
+        "Description": "Read-only restore access to the Station backup destination bucket, intended for a separate backup-restore identity only. Not attached to any role by this template, and never referenced by any app-facing access policy.",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:ListBucket",
+                "s3:ListBucketVersions"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "Fn::Sub": [
+                    "arn:${AWS::Partition}:s3:::${BucketName}/*",
+                    {
+                      "BucketName": {
+                        "Ref": "BackupBucketName"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "DocumentsBucketNameOut": {
+      "Description": "Documents bucket name",
+      "Value": {
+        "Ref": "DocumentsBucket"
+      }
+    },
+    "DocumentsBucketArnOut": {
+      "Description": "Documents bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "DocumentsBucket",
+          "Arn"
+        ]
+      }
+    },
+    "StaticBucketNameOut": {
+      "Description": "Static bucket name",
+      "Value": {
+        "Ref": "StaticBucket"
+      }
+    },
+    "StaticBucketArnOut": {
+      "Description": "Static bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "StaticBucket",
+          "Arn"
+        ]
+      }
+    },
+    "EmailAttachmentsBucketNameOut": {
+      "Description": "Email attachments bucket name",
+      "Value": {
+        "Ref": "EmailAttachmentsBucket"
+      }
+    },
+    "EmailAttachmentsBucketArnOut": {
+      "Description": "Email attachments bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "EmailAttachmentsBucket",
+          "Arn"
+        ]
+      }
+    },
+    "DocxStagingBucketNameOut": {
+      "Description": "DOCX staging bucket name",
+      "Value": {
+        "Ref": "DocxStagingBucket"
+      }
+    },
+    "DocxStagingBucketArnOut": {
+      "Description": "DOCX staging bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "DocxStagingBucket",
+          "Arn"
+        ]
+      }
+    },
+    "UploadStagingBucketNameOut": {
+      "Description": "Upload staging bucket name",
+      "Value": {
+        "Ref": "UploadStagingBucket"
+      }
+    },
+    "UploadStagingBucketArnOut": {
+      "Description": "Upload staging bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "UploadStagingBucket",
+          "Arn"
+        ]
+      }
+    },
+    "BackupBucketNameOut": {
+      "Condition": "CreateBackupBucket",
+      "Description": "Documents backup bucket name",
+      "Value": {
+        "Ref": "BackupBucket"
+      }
+    },
+    "BackupBucketArnOut": {
+      "Condition": "CreateBackupBucket",
+      "Description": "Documents backup bucket ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "BackupBucket",
+          "Arn"
+        ]
+      }
+    },
+    "StaticMetadataTableNameOut": {
+      "Description": "Static-file metadata table name",
+      "Value": {
+        "Ref": "StaticMetadataTable"
+      }
+    },
+    "StaticMetadataTableArnOut": {
+      "Description": "Static-file metadata table ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "StaticMetadataTable",
+          "Arn"
+        ]
+      }
+    },
+    "DocumentsQueueUrlOut": {
+      "Description": "Documents notification queue URL",
+      "Value": {
+        "Ref": "DocumentsQueue"
+      }
+    },
+    "DocumentsQueueArnOut": {
+      "Description": "Documents notification queue ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "DocumentsQueue",
+          "Arn"
+        ]
+      }
+    },
+    "DocumentsDlqArnOut": {
+      "Description": "Documents notification DLQ ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "DocumentsDlq",
+          "Arn"
+        ]
+      }
+    },
+    "StaticQueueUrlOut": {
+      "Description": "Static notification queue URL",
+      "Value": {
+        "Ref": "StaticQueue"
+      }
+    },
+    "StaticQueueArnOut": {
+      "Description": "Static notification queue ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "StaticQueue",
+          "Arn"
+        ]
+      }
+    },
+    "StaticDlqArnOut": {
+      "Description": "Static notification DLQ ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "StaticDlq",
+          "Arn"
+        ]
+      }
+    },
+    "DocumentsAppAccessPolicyArnOut": {
+      "Description": "Managed policy ARN for documents-bucket app access (unattached)",
+      "Value": {
+        "Ref": "DocumentsAppAccessPolicy"
+      }
+    },
+    "StaticAppAccessPolicyArnOut": {
+      "Description": "Managed policy ARN for static-bucket + metadata-table app access (unattached)",
+      "Value": {
+        "Ref": "StaticAppAccessPolicy"
+      }
+    },
+    "EmailAttachmentsAppAccessPolicyArnOut": {
+      "Description": "Managed policy ARN for email-attachments-bucket app access (unattached)",
+      "Value": {
+        "Ref": "EmailAttachmentsAppAccessPolicy"
+      }
+    },
+    "DocxStagingAppAccessPolicyArnOut": {
+      "Description": "Managed policy ARN for docx-staging-bucket app access (unattached)",
+      "Value": {
+        "Ref": "DocxStagingAppAccessPolicy"
+      }
+    },
+    "UploadStagingAppAccessPolicyArnOut": {
+      "Description": "Managed policy ARN for upload-staging-bucket app access (unattached)",
+      "Value": {
+        "Ref": "UploadStagingAppAccessPolicy"
+      }
+    },
+    "NotificationQueueConsumerPolicyArnOut": {
+      "Description": "Managed policy ARN for documents/static queue consumer access (unattached)",
+      "Value": {
+        "Ref": "NotificationQueueConsumerPolicy"
+      }
+    },
+    "BackupWriterAccessPolicyArnOut": {
+      "Condition": "CreateBackupBucket",
+      "Description": "Managed policy ARN for the separate backup-writer identity (write-only, no delete; unattached)",
+      "Value": {
+        "Ref": "BackupWriterAccessPolicy"
+      }
+    },
+    "BackupRestoreAccessPolicyArnOut": {
+      "Condition": "CreateBackupBucket",
+      "Description": "Managed policy ARN for the separate backup-restore identity (read-only; unattached)",
+      "Value": {
+        "Ref": "BackupRestoreAccessPolicy"
+      }
+    }
+  }
+}
