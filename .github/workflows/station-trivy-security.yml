@@ -1,0 +1,145 @@
+# Station-owned static security checks. Tracking: MARFI-Systems/station#32.
+# No Docker builds, dependency installation, app execution, deployment, or secrets inheritance.
+# Scheduled/manual default-branch coverage requires this file to land on the default branch.
+# Push coverage applies only to branches containing this workflow. Fork PRs are not run on Monk.
+name: Station Trivy security scan
+
+on:
+  push:
+    branches: [main, 'station/**', ci/trivy-security-scan]
+  pull_request:
+    branches: [main, 'station/**']
+  schedule:
+    - cron: '31 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: station-trivy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Trivy static (${{ matrix.target }})
+    if: >-
+      github.repository == 'MARFI-Systems/station' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: monkci-ubuntu-24.04-2
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [revision, installed-mailbox-release]
+    steps:
+      - name: Check out scan target without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          # Keep this explicit baseline synchronized with verified release promotions.
+          # This covers the installed mailbox code while main retains the upstream baseline.
+          ref: ${{ matrix.target == 'installed-mailbox-release' && 'a44dea86de40757b89b86c627d06fee1fe0b3882' || github.sha }}
+
+      - name: Install pinned Trivy (no application dependencies)
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514
+        with:
+          version: v0.70.0
+          cache: false
+
+      - name: Static scan with trusted configuration and private temporary reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          scan_dir="$RUNNER_TEMP/station-trivy"
+          mkdir -p "$scan_dir"
+          printf '{}\n' > "$scan_dir/trivy.yaml"
+          printf '{}\n' > "$scan_dir/secret.yaml"
+          : > "$scan_dir/ignore"
+          git rev-parse HEAD > "$scan_dir/revision"
+          # Neither repository-controlled ignore/config files nor application scripts run.
+          # Never print the raw report or scanner log: secret matches can contain source text.
+          if ! trivy fs . \
+            --config "$scan_dir/trivy.yaml" \
+            --secret-config "$scan_dir/secret.yaml" \
+            --ignorefile "$scan_dir/ignore" \
+            --scanners vuln,misconfig,secret \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed=false \
+            --format json \
+            --output "$scan_dir/report.json" \
+            --cache-dir "$RUNNER_TEMP/station-trivy-cache" \
+            --skip-dirs .git,.cache \
+            --timeout 15m \
+            --exit-code 0 \
+            > "$scan_dir/scanner.log" 2>&1; then
+            echo '::error::Trivy did not finish. No clean result is claimed; raw diagnostics were withheld.'
+            exit 1
+          fi
+
+      - name: Publish counts only and enforce HIGH/CRITICAL gate
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          SCAN_TARGET: ${{ matrix.target }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const dir = path.join(process.env.RUNNER_TEMP, 'station-trivy');
+            let report, revision;
+            try {
+              report = JSON.parse(fs.readFileSync(path.join(dir, 'report.json'), 'utf8'));
+              revision = fs.readFileSync(path.join(dir, 'revision'), 'utf8').trim();
+            } catch {
+              core.setFailed('Missing or invalid Trivy evidence; no clean result is claimed.');
+              return;
+            }
+            if (report.SchemaVersion !== 2 || !Array.isArray(report.Results) ||
+                !/^[a-f0-9]{40}$/.test(revision)) {
+              core.setFailed('Unexpected Trivy evidence schema; no clean result is claimed.');
+              return;
+            }
+            const counts = {
+              Vulnerabilities: { HIGH: 0, CRITICAL: 0 },
+              Misconfigurations: { HIGH: 0, CRITICAL: 0 },
+              Secrets: { HIGH: 0, CRITICAL: 0 }
+            };
+            for (const result of report.Results) {
+              for (const kind of Object.keys(counts)) {
+                const items = result[kind] ?? [];
+                if (!Array.isArray(items)) {
+                  core.setFailed('Invalid findings collection; no clean result is claimed.');
+                  return;
+                }
+                for (const item of items) {
+                  if (kind === 'Misconfigurations' && item.Status !== 'FAIL') continue;
+                  if (item.Severity === 'HIGH' || item.Severity === 'CRITICAL') {
+                    counts[kind][item.Severity] += 1;
+                  }
+                }
+              }
+            }
+            const total = Object.values(counts).reduce((n, c) => n + c.HIGH + c.CRITICAL, 0);
+            const target = process.env.SCAN_TARGET === 'installed-mailbox-release'
+              ? 'Installed mailbox release baseline' : 'Triggering repository revision';
+            await core.summary
+              .addHeading('Station Trivy static scan')
+              .addRaw(`${target}: ${revision}\n\n`)
+              .addTable([
+                [{data: 'Category', header: true}, {data: 'HIGH', header: true}, {data: 'CRITICAL', header: true}],
+                ...Object.entries(counts).map(([kind, c]) => [kind, String(c.HIGH), String(c.CRITICAL)])
+              ])
+              .addRaw('\nStatic repository scan only; no runtime/container-image attestation.\n')
+              .addRaw('No raw reports, secret values, source snippets, finding locations, or detailed diagnostics are published.\n')
+              .addRaw('Authorized maintainers must reproduce findings in a private environment for triage.\n')
+              .write();
+            core.info(JSON.stringify({ target, revision, counts, total }));
+            if (total > 0) core.setFailed('HIGH/CRITICAL findings require private triage. The scan completed, but the security gate failed.');
+
+      - name: Remove sensitive temporary reports and scanner cache
+        if: always()
+        shell: bash
+        run: |
+          rm -rf -- "$RUNNER_TEMP/station-trivy" "$RUNNER_TEMP/station-trivy-cache"
