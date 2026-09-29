@@ -321,8 +321,8 @@ fn partial_credentials_fail_closed_in_all_remote_modes() {
     for mode in ["aws", "s3-compatible"] {
         let mut raw = raw_config(Some(mode));
         raw.region = Some("us-east-1".to_owned());
-        raw.endpoint_url = (mode == "s3-compatible")
-            .then(|| "https://storage.example.invalid".to_owned());
+        raw.endpoint_url =
+            (mode == "s3-compatible").then(|| "https://storage.example.invalid".to_owned());
         raw.access_key_id = Some("only-access-key".to_owned());
 
         assert_eq!(
@@ -398,9 +398,7 @@ fn remote_aws_clears_generic_and_service_specific_endpoint_overrides() {
     use std::time::Duration;
 
     use aws_sdk_s3::{
-        config::{
-            BehaviorVersion, Builder, Credentials, Region, SharedCredentialsProvider,
-        },
+        config::{BehaviorVersion, Builder, Credentials, Region, SharedCredentialsProvider},
         presigning::PresigningConfig,
     };
 
@@ -428,11 +426,8 @@ fn remote_aws_clears_generic_and_service_specific_endpoint_overrides() {
             builder.set_endpoint_url(Some(endpoint.to_owned()));
         }
 
-        let sdk_config = apply_remote_s3_overrides(
-            builder,
-            aws_config_with_static_credentials(),
-        )
-        .build();
+        let sdk_config =
+            apply_remote_s3_overrides(builder, aws_config_with_static_credentials()).build();
         let client = aws_sdk_s3::Client::from_conf(sdk_config);
         let presigned = block_on_no_network(
             client
@@ -448,7 +443,11 @@ fn remote_aws_clears_generic_and_service_specific_endpoint_overrides() {
 
         assert!(presigned.uri().contains("amazonaws.com"));
         assert!(!presigned.uri().contains("ambient-generic-endpoint"));
-        assert!(!presigned.uri().contains("ambient-service-specific-endpoint"));
+        assert!(
+            !presigned
+                .uri()
+                .contains("ambient-service-specific-endpoint")
+        );
     }
 }
 
@@ -469,12 +468,8 @@ fn remote_signed_urls_are_preserved_byte_for_byte() {
             input.as_bytes()
         );
         assert_eq!(
-            transform_internal_url_for_config(
-                input,
-                &config,
-                Some("http://localstack:4566"),
-            )
-            .as_bytes(),
+            transform_internal_url_for_config(input, &config, Some("http://localstack:4566"),)
+                .as_bytes(),
             input.as_bytes()
         );
     }

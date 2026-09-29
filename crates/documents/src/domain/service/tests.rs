@@ -140,7 +140,9 @@ impl PresignedUploadUrlPort for TestUploadUrlPort {
         key: &str,
         expiry_seconds: u64,
     ) -> anyhow::Result<String> {
-        Ok(format!("https://s3.example.test/{key}?expires={expiry_seconds}"))
+        Ok(format!(
+            "https://s3.example.test/{key}?expires={expiry_seconds}"
+        ))
     }
 
     async fn copy_object(&self, _source_key: &str, _destination_key: &str) -> anyhow::Result<()> {

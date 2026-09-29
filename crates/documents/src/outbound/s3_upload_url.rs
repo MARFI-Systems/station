@@ -243,9 +243,7 @@ mod test {
         .unwrap();
 
         let uri = presigned.uri();
-        assert!(uri.contains(
-            "/documents/macro%7Cowner%40user.com/folder%20name/a%3F%23%25.txt?"
-        ));
+        assert!(uri.contains("/documents/macro%7Cowner%40user.com/folder%20name/a%3F%23%25.txt?"));
         assert!(!uri.contains("%257C"));
     }
 }

@@ -522,8 +522,7 @@ impl<
                 .map_err(Into::into)?
         };
 
-        let provider =
-            document_get_url_provider(macro_aws_config::is_custom_s3_configured());
+        let provider = document_get_url_provider(macro_aws_config::is_custom_s3_configured());
         let presigned_urls: Vec<PresignedUrl> = match provider {
             DocumentGetUrlProvider::DirectS3 => {
                 let mut presigned_urls = Vec::with_capacity(shas.len());

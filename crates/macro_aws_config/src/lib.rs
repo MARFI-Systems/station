@@ -42,9 +42,7 @@ pub enum ObjectStorageConfigError {
         variable: &'static str,
     },
     /// Provider-specific settings were supplied without an explicit mode.
-    #[error(
-        "{variable} requires an explicit OBJECT_STORAGE_MODE of aws or s3-compatible"
-    )]
+    #[error("{variable} requires an explicit OBJECT_STORAGE_MODE of aws or s3-compatible")]
     ModeRequired {
         /// The variable that requires an explicit mode.
         variable: &'static str,
@@ -114,10 +112,7 @@ impl RawObjectStorageConfig {
         [
             (OBJECT_STORAGE_REGION, self.region.is_some()),
             (OBJECT_STORAGE_ENDPOINT_URL, self.endpoint_url.is_some()),
-            (
-                OBJECT_STORAGE_ACCESS_KEY_ID,
-                self.access_key_id.is_some(),
-            ),
+            (OBJECT_STORAGE_ACCESS_KEY_ID, self.access_key_id.is_some()),
             (
                 OBJECT_STORAGE_SECRET_ACCESS_KEY,
                 self.secret_access_key.is_some(),
@@ -186,7 +181,9 @@ impl AmbientAwsCredentialFields {
 impl fmt::Debug for ObjectStorageConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Legacy => formatter.debug_struct("ObjectStorageConfig::Legacy").finish(),
+            Self::Legacy => formatter
+                .debug_struct("ObjectStorageConfig::Legacy")
+                .finish(),
             Self::Aws {
                 region,
                 credentials,
@@ -336,9 +333,7 @@ fn validate_credentials(
     }
 }
 
-fn validate_tls_endpoint(
-    endpoint_url: Option<String>,
-) -> Result<String, ObjectStorageConfigError> {
+fn validate_tls_endpoint(endpoint_url: Option<String>) -> Result<String, ObjectStorageConfigError> {
     let endpoint_url = endpoint_url.ok_or(ObjectStorageConfigError::MissingVariable {
         variable: OBJECT_STORAGE_ENDPOINT_URL,
         mode: "s3-compatible",
@@ -351,12 +346,11 @@ fn validate_tls_endpoint(
         });
     }
 
-    let parsed = url::Url::parse(&endpoint_url).map_err(|_| {
-        ObjectStorageConfigError::InvalidValue {
+    let parsed =
+        url::Url::parse(&endpoint_url).map_err(|_| ObjectStorageConfigError::InvalidValue {
             variable: OBJECT_STORAGE_ENDPOINT_URL,
             reason: "must be an absolute HTTPS URL",
-        }
-    })?;
+        })?;
 
     if parsed.scheme() != "https" || parsed.host_str().is_none() {
         return Err(ObjectStorageConfigError::InvalidValue {
@@ -417,11 +411,7 @@ fn object_storage_config() -> Result<ObjectStorageConfig, ObjectStorageConfigErr
         }
     ) && LocalAwsUrl::new().is_some()
     {
-        validate_default_chain_isolation(
-            &config,
-            true,
-            AmbientAwsCredentialFields::from_env()?,
-        )?;
+        validate_default_chain_isolation(&config, true, AmbientAwsCredentialFields::from_env()?)?;
     }
 
     Ok(config)
@@ -486,8 +476,8 @@ async fn remote_s3_config(config: ObjectStorageConfig) -> aws_sdk_s3::Config {
         ObjectStorageConfig::Legacy => unreachable!("legacy uses the shared AWS configuration"),
     };
 
-    let loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(Region::new(region));
+    let loader =
+        aws_config::defaults(aws_config::BehaviorVersion::latest()).region(Region::new(region));
     let shared_config = if uses_default_credentials {
         loader.load().await
     } else {
@@ -587,7 +577,10 @@ pub fn is_local_aws() -> bool {
 ///
 /// Invalid explicit object-storage configuration fails closed.
 pub fn is_local_s3() -> bool {
-    matches!(object_storage_config_or_panic(), ObjectStorageConfig::Legacy) && is_local_aws()
+    matches!(
+        object_storage_config_or_panic(),
+        ObjectStorageConfig::Legacy
+    ) && is_local_aws()
 }
 
 /// Returns whether an explicit valid remote S3 configuration is selected.

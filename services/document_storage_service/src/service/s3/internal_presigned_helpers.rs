@@ -56,13 +56,7 @@ pub(in crate::service::s3) async fn get_document_presigned_url(
     key: &str,
     expiry_seconds: u64,
 ) -> anyhow::Result<String> {
-    get_presigned_url_with_expiry(
-        client,
-        bucket,
-        key,
-        Duration::from_secs(expiry_seconds),
-    )
-    .await
+    get_presigned_url_with_expiry(client, bucket, key, Duration::from_secs(expiry_seconds)).await
 }
 
 async fn get_presigned_url_with_expiry(

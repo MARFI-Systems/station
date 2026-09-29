@@ -145,9 +145,7 @@ async fn sign_document_key(
         }
     }
 
-    let signed_url = match document_get_url_provider(
-        macro_aws_config::is_custom_s3_configured(),
-    ) {
+    let signed_url = match document_get_url_provider(macro_aws_config::is_custom_s3_configured()) {
         DocumentGetUrlProvider::DirectS3 => {
             state
                 .s3_client
@@ -254,50 +252,49 @@ async fn get_docx_urls(
     tracing::debug!(elapsed = ?start_shas.elapsed(), "got document shas");
 
     let start_presigned_urls = std::time::Instant::now();
-    let presigned_urls: Vec<PresignedUrl> = match document_get_url_provider(
-        macro_aws_config::is_custom_s3_configured(),
-    ) {
-        DocumentGetUrlProvider::DirectS3 => {
-            let mut presigned_urls = Vec::with_capacity(shas.len());
-            for sha in &shas {
-                let url = state
-                    .s3_client
-                    .get_document_presigned_url(
-                        sha,
-                        state
-                            .config
-                            .document_storage_service_presigned_url_expiry_seconds,
-                    )
-                    .await
-                    .inspect_err(|e| {
-                        tracing::error!(error=?e, sha=?sha, "unable to generate presigned url");
-                    })?;
-                presigned_urls.push(PresignedUrl {
-                    presigned_url: url,
-                    sha: sha.to_string(),
-                });
+    let presigned_urls: Vec<PresignedUrl> =
+        match document_get_url_provider(macro_aws_config::is_custom_s3_configured()) {
+            DocumentGetUrlProvider::DirectS3 => {
+                let mut presigned_urls = Vec::with_capacity(shas.len());
+                for sha in &shas {
+                    let url = state
+                        .s3_client
+                        .get_document_presigned_url(
+                            sha,
+                            state
+                                .config
+                                .document_storage_service_presigned_url_expiry_seconds,
+                        )
+                        .await
+                        .inspect_err(|e| {
+                            tracing::error!(error=?e, sha=?sha, "unable to generate presigned url");
+                        })?;
+                    presigned_urls.push(PresignedUrl {
+                        presigned_url: url,
+                        sha: sha.to_string(),
+                    });
+                }
+                presigned_urls
             }
-            presigned_urls
-        }
-        DocumentGetUrlProvider::CloudFront => {
-            let signed_options = get_cloudfront_signed_options(
-                &state
+            DocumentGetUrlProvider::CloudFront => {
+                let signed_options = get_cloudfront_signed_options(
+                    &state
+                        .config
+                        .document_storage_service_cloudfront_signer_public_key_id,
+                    state
+                        .config
+                        .document_storage_service_cloudfront_signer_private_key
+                        .as_ref(),
+                    state
+                        .config
+                        .document_storage_service_presigned_url_expiry_seconds,
+                );
+                let cloudfront_distribution_url = state
                     .config
-                    .document_storage_service_cloudfront_signer_public_key_id,
-                state
-                    .config
-                    .document_storage_service_cloudfront_signer_private_key
-                    .as_ref(),
-                state
-                    .config
-                    .document_storage_service_presigned_url_expiry_seconds,
-            );
-            let cloudfront_distribution_url = state
-                .config
-                .document_storage_service_cloudfront_distribution_url
-                .as_ref();
+                    .document_storage_service_cloudfront_distribution_url
+                    .as_ref();
 
-            shas.par_iter()
+                shas.par_iter()
                 .filter_map(|sha| {
                     match get_presigned_url(cloudfront_distribution_url, sha, &signed_options) {
                         Ok(url) => Some(PresignedUrl {
@@ -311,8 +308,8 @@ async fn get_docx_urls(
                     }
                 })
                 .collect()
-        }
-    };
+            }
+        };
 
     if shas.len() != presigned_urls.len() {
         anyhow::bail!("unable to generate presigned urls");
