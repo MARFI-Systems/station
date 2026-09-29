@@ -5,7 +5,7 @@ set -euo pipefail
 : "${GITHUB_SHA:?}" "${RUNNER_TEMP:?}"
 cd "$(git rev-parse --show-toplevel)"
 [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
-[[ -z "$(git status --porcelain)" ]]
+[[ -z "$(git status --porcelain --untracked-files=no)" ]]
 # Unit checks use explicit in-memory configuration and synthetic signing fixtures.
 # No production credentials, remote object reads/writes, or database regeneration.
 unset RUSTC_WRAPPER DATABASE_URL
@@ -21,7 +21,10 @@ unset OBJECT_STORAGE_ACCESS_KEY_ID OBJECT_STORAGE_SECRET_ACCESS_KEY OBJECT_STORA
 printf '{"commit":"%s","runner":"monkci-ubuntu-24.04-8","sqlx_offline":true,"deployment":false,"live_provider_test":false}\n' "$GITHUB_SHA" > "$RUNNER_TEMP/station-storage-provenance.json"
 cargo test --locked -p macro_aws_config --all-features 2>&1 | tee "$RUNNER_TEMP/station-storage-config-tests.log"
 cargo check --locked -p document_storage_service -p static_file_service -p email_service -p document_upload_finalizer_handler --features email_service/microsoft_graph_readonly 2>&1 | tee "$RUNNER_TEMP/station-storage-consumers.log"
-# Run only bounded, pure consumer regressions; no live services or database fixtures.
+# Focused consumer tests compile whole crate test targets whose SQL macros need the
+# disposable runner-only database created by the workflow (never a live database).
+unset SQLX_OFFLINE
+# Run only bounded consumer regressions; none of the selected tests touch storage or the network.
 # Cargo succeeds when a filter matches zero tests, so explicitly reject that case.
 focused_test() {
   "$@" 2>&1 | tee "$RUNNER_TEMP/station-storage-focused.log" | tee -a "$RUNNER_TEMP/station-storage-consumer-tests.log"

@@ -63,6 +63,15 @@ jobs:
             exit 1
           fi
 
+      - name: Create disposable runner-only test databases
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          unset SQLX_OFFLINE RUSTC_WRAPPER
+          just run_dbs -d
+          just setup_test_envs
+          just setup_macrodb
+
       - name: Test storage configuration and type-check consumers offline
         run: bash .github/scripts/check-station-storage.sh
 
